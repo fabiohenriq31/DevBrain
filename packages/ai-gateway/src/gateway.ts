@@ -129,6 +129,13 @@ export class AiGateway {
   ) {
     this.ledger = new QuotaLedger(db);
     this.ledger.recover();
+    for (const row of db.all<{ data: string }>('SELECT data FROM ai_routing_policies')) {
+      const stored = JSON.parse(row.data) as Record<string, unknown>;
+      const policy = RoutingPolicySchema.parse(stored.policy);
+      const billing = BillingPolicySchema.parse(stored.billing);
+      const privacy = PrivacyPolicySchema.parse(stored.privacy);
+      this.routing.set(policy.id, { policy, billing, privacy });
+    }
     db.run("UPDATE ai_inference SET status='interrupted',updated_at=:at WHERE status='running'", {
       at: new Date().toISOString(),
     });
@@ -144,6 +151,14 @@ export class AiGateway {
     const privacy = PrivacyPolicySchema.parse(input.privacy);
     if (policy.billingPolicyId !== billing.id || policy.privacyPolicyId !== privacy.id)
       throw new DevBrainError('VALIDATION_FAILED', 'Routing policy references a different policy');
+    this.db.run(
+      'INSERT INTO ai_routing_policies (id,data,updated_at) VALUES (:id,:data,:at) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at',
+      {
+        id: policy.id,
+        data: JSON.stringify({ policy, billing, privacy }),
+        at: new Date().toISOString(),
+      },
+    );
     this.routing.set(policy.id, { policy, billing, privacy });
   }
 
@@ -464,6 +479,7 @@ export class AiGateway {
               id: request.id,
             },
           );
+          this.db.run('DELETE FROM ai_cooldowns WHERE route_id=:id', { id: candidate.route.id });
           yield { type: 'completed', requestId: request.id, seq: seq++, result };
           return;
         } catch (error) {

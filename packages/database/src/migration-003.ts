@@ -19,6 +19,9 @@ export const MIGRATION_003 = `
   CREATE TABLE ai_routes (
     id TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL
   );
+  CREATE TABLE ai_routing_policies (
+    id TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
   CREATE TABLE ai_quota_definitions (
     id TEXT PRIMARY KEY, data TEXT NOT NULL
   );

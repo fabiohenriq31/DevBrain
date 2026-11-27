@@ -419,3 +419,38 @@ describe('authenticated loopback gateway', () => {
     }
   });
 });
+
+describe('routing recovery', () => {
+  it('loads the saved deterministic policy after a gateway restart', async () => {
+    const database = db();
+    const first = new AiGateway(database.driver, async () => '');
+    first.configurePolicy({
+      policy: {
+        id: 'default-policy',
+        strategy: 'priority',
+        billingPolicyId: 'billing',
+        privacyPolicyId: 'privacy',
+        maxAttempts: 1,
+        requireTools: false,
+      },
+      billing: {
+        id: 'billing',
+        allowPaid: false,
+        allowUnknownCost: false,
+        maxCostPerRequest: null,
+        maxCostPerDay: null,
+        currency: 'USD',
+      },
+      privacy: {
+        id: 'privacy',
+        mode: 'local-only',
+        allowedProviderIds: [],
+        allowPromptLogging: false,
+      },
+    });
+    const restarted = new AiGateway(database.driver, async () => '');
+    await expect(restarted.infer(request())).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+    });
+  });
+});
