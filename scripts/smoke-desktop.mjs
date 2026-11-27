@@ -26,7 +26,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const desktop = path.join(root, 'apps', 'desktop');
-const electronPath = createRequire(path.join(desktop, 'package.json'))('electron');
+const packagedBinary = process.env.DEVBRAIN_SMOKE_BINARY;
+const electronPath =
+  packagedBinary ?? createRequire(path.join(desktop, 'package.json'))('electron');
 const port = 9300 + Math.floor(Math.random() * 500);
 const tmp = await mkdtemp(path.join(os.tmpdir(), 'devbrain-smoke-'));
 const projectDir = path.join(tmp, 'sample-project');
@@ -51,7 +53,11 @@ const exited = () =>
 const launch = async () => {
   child = spawn(
     electronPath,
-    [desktop, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`],
+    [
+      ...(packagedBinary ? [] : [desktop]),
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${userData}`,
+    ],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, ELECTRON_RENDERER_URL: '', ELECTRON_ENABLE_LOGGING: '0' },

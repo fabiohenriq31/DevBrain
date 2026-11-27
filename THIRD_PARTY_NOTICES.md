@@ -30,6 +30,7 @@ os metadados publicados de cada pacote.
 | --- | --- | --- |
 | electron | 44.11.1 | MIT |
 | electron-vite | 6.0.0 | MIT |
+| electron-builder | 26.18.0 | MIT |
 | vite | 8.3.8 | MIT |
 | @vitejs/plugin-react | 6.3.0 | MIT |
 | react, react-dom | 19.1.10 | MIT |
