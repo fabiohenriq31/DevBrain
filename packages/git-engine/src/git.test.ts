@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -37,6 +38,22 @@ describe('local Git integration', () => {
       ]),
     );
     expect(await service.diff(directory)).toContain('after');
+    // Repository config is untrusted: fsmonitor/textconv programs never run on inspection.
+    const marker = join(directory, 'pwned.txt');
+    const program = `node -e "require('fs').writeFileSync(process.argv[1],'x')" ${JSON.stringify(marker)}`;
+    await run('config', 'core.fsmonitor', program);
+    await run('config', 'diff.evil.textconv', program);
+    await writeFile(join(directory, '.gitattributes'), '*.txt diff=evil\n');
+    await service.status(directory);
+    expect(await service.diff(directory)).toContain('after');
+    expect((await service.diffBounded(directory, 1 << 20)).truncated).toBe(false);
+    expect(existsSync(marker)).toBe(false);
+    // Bounded diff truncates instead of failing, on a UTF-8 boundary.
+    await writeFile(join(directory, 'a file.txt'), 'ç'.repeat(40_000));
+    const bounded = await service.diffBounded(directory, 1001);
+    expect(bounded.truncated).toBe(true);
+    expect(Buffer.byteLength(bounded.diff)).toBeLessThanOrEqual(1001);
+    expect(bounded.diff).not.toContain('�');
     expect((await service.commits(directory))[0]).toContain('initial');
   });
   it('creates a linked worktree and refuses to remove it with user changes', async () => {

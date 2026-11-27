@@ -246,10 +246,15 @@ export const createHandlers = ({
           capturedAt: nowTimestamp(),
         };
       }
-      const raw = redactString(await git.diff(workspace.rootPath));
-      const buf = Buffer.from(raw, 'utf8');
-      const truncated = buf.byteLength > input.maxBytes;
-      const diff = truncated ? buf.subarray(0, input.maxBytes).toString('utf8') : raw;
+      // Read a margin past maxBytes, redact, then cut: a secret straddling git's read boundary
+      // is still matched whole by the redactor, and the cut lands on redacted text.
+      const read = await git.diffBounded(workspace.rootPath, input.maxBytes + 64 * 1024);
+      const redacted = Buffer.from(redactString(read.diff), 'utf8');
+      let cut = Math.min(redacted.byteLength, input.maxBytes);
+      while (cut > 0 && cut < redacted.byteLength && ((redacted[cut] ?? 0) & 0xc0) === 0x80)
+        cut -= 1;
+      const diff = redacted.subarray(0, cut).toString('utf8');
+      const truncated = read.truncated || cut < redacted.byteLength;
       return { workspaceId: workspace.id, diff, truncated, capturedAt: nowTimestamp() };
     },
   };

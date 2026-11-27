@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -11,19 +11,22 @@ import {
 } from '@devbrain/contracts';
 
 const runFile = promisify(execFile);
+const GIT = process.platform === 'win32' ? 'git.exe' : 'git';
+/**
+ * Repositories are untrusted (agents can write `.git/config`). Options that would make
+ * DevBrain's own read-only inspection run repository-configured programs are forced off:
+ * fsmonitor hooks, external diff and textconv drivers.
+ */
+const SAFE_CONFIG = ['-c', 'core.fsmonitor=false', '-c', 'diff.external='];
 const git = async (cwd: string, args: string[]): Promise<string> => {
   try {
-    const { stdout } = await runFile(
-      process.platform === 'win32' ? 'git.exe' : 'git',
-      ['-C', cwd, ...args],
-      {
-        encoding: 'utf8',
-        windowsHide: true,
-        timeout: 15_000,
-        maxBuffer: 8 * 1024 * 1024,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-      },
-    );
+    const { stdout } = await runFile(GIT, [...SAFE_CONFIG, '-C', cwd, ...args], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 15_000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    });
     return stdout;
   } catch {
     throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Git command failed');
@@ -161,7 +164,59 @@ export class LocalGitService implements GitService {
     };
   }
   async diff(rootPath: string): Promise<string> {
-    return git(rootPath, ['diff', '--no-ext-diff', '--']);
+    return git(rootPath, ['diff', '--no-ext-diff', '--no-textconv', '--']);
+  }
+  /**
+   * Working-tree diff read up to `maxBytes` (the process is stopped there), so a huge diff
+   * is truncated instead of failing. The cut never splits a UTF-8 sequence.
+   */
+  async diffBounded(
+    rootPath: string,
+    maxBytes: number,
+  ): Promise<{ diff: string; truncated: boolean }> {
+    return new Promise((resolvePromise, reject) => {
+      const child = spawn(
+        GIT,
+        [...SAFE_CONFIG, '-C', rootPath, 'diff', '--no-ext-diff', '--no-textconv', '--'],
+        {
+          shell: false,
+          windowsHide: true,
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+          stdio: ['ignore', 'pipe', 'ignore'],
+        },
+      );
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let truncated = false;
+      const timer = setTimeout(() => child.kill(), 15_000);
+      child.stdout.on('data', (chunk: Buffer) => {
+        if (truncated) return;
+        chunks.push(chunk);
+        size += chunk.byteLength;
+        if (size > maxBytes) {
+          truncated = true;
+          child.kill();
+        }
+      });
+      child.once('error', () => {
+        clearTimeout(timer);
+        reject(new DevBrainError('PROVIDER_UNAVAILABLE', 'Git command failed'));
+      });
+      child.once('close', (code) => {
+        clearTimeout(timer);
+        if (!truncated && code !== 0) {
+          reject(new DevBrainError('PROVIDER_UNAVAILABLE', 'Git command failed'));
+          return;
+        }
+        let buffer = Buffer.concat(chunks);
+        if (buffer.byteLength > maxBytes) {
+          let cut = maxBytes;
+          while (cut > 0 && ((buffer[cut] ?? 0) & 0xc0) === 0x80) cut -= 1;
+          buffer = buffer.subarray(0, cut);
+        }
+        resolvePromise({ diff: buffer.toString('utf8'), truncated });
+      });
+    });
   }
   async commits(rootPath: string, limit = 20): Promise<string[]> {
     return (await git(rootPath, ['log', `-${Math.min(Math.max(limit, 1), 100)}`, '--format=%H %s']))
