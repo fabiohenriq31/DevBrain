@@ -6,7 +6,11 @@ import {
   type ExecutionEvent,
   type ExecutionRequest,
   type ExecutionResult,
+  nowTimestamp,
 } from '@devbrain/contracts';
+import { spawn } from 'node:child_process';
+import { access, realpath, stat } from 'node:fs/promises';
+import { delimiter, isAbsolute, join } from 'node:path';
 
 /**
  * Provider adapter SDK. Every integration (CLI agent, HTTP API, local model) implements
@@ -87,3 +91,169 @@ export class ProviderRegistry {
     return [...this.adapters.values()].map((a) => a.descriptor);
   }
 }
+
+const locate = async (name: string): Promise<string | null> => {
+  const dirs = isAbsolute(name) ? [''] : (process.env.PATH ?? '').split(delimiter);
+  for (const dir of dirs) {
+    const candidate = dir ? join(dir, process.platform === 'win32' ? `${name}.exe` : name) : name;
+    try {
+      if ((await stat(candidate)).isFile()) {
+        await access(candidate);
+        return await realpath(candidate);
+      }
+    } catch {
+      /* next */
+    }
+  }
+  return null;
+};
+
+type CliKind = 'codex' | 'claude' | 'antigravity';
+const specs = {
+  codex: {
+    key: 'openai-codex-cli',
+    name: 'OpenAI Codex',
+    executable: 'codex',
+    url: 'https://developers.openai.com/blog/codex-as-a-platform',
+    capabilities: {
+      streaming: true,
+      interrupt: true,
+      resumeSession: false,
+      toolUse: true,
+      fileEdits: true,
+      shellCommands: true,
+      mcp: true,
+      structuredOutput: true,
+      maxConcurrentSessions: null,
+      contextWindowTokens: null,
+      costModel: 'subscription' as const,
+      enforcement: process.platform === 'win32' ? ('none' as const) : ('adapter-sandbox' as const),
+    },
+  },
+  claude: {
+    key: 'claude-code-cli',
+    name: 'Claude Code',
+    executable: 'claude',
+    url: 'https://code.claude.com/docs/en/cli-reference',
+    capabilities: {
+      streaming: true,
+      interrupt: true,
+      resumeSession: false,
+      toolUse: true,
+      fileEdits: true,
+      shellCommands: true,
+      mcp: true,
+      structuredOutput: true,
+      maxConcurrentSessions: null,
+      contextWindowTokens: null,
+      costModel: 'subscription' as const,
+      enforcement: 'none' as const,
+    },
+  },
+  antigravity: {
+    key: 'google-antigravity-cli',
+    name: 'Google Antigravity CLI',
+    executable: 'agy',
+    url: 'https://codelabs.developers.google.com/sdd-agy-cli',
+    capabilities: {
+      streaming: false,
+      interrupt: true,
+      resumeSession: false,
+      toolUse: true,
+      fileEdits: true,
+      shellCommands: true,
+      mcp: true,
+      structuredOutput: false,
+      maxConcurrentSessions: null,
+      contextWindowTokens: null,
+      costModel: 'unknown' as const,
+      enforcement: 'none' as const,
+    },
+  },
+} satisfies Record<
+  CliKind,
+  { key: string; name: string; executable: string; url: string; capabilities: AgentCapabilities }
+>;
+
+class CliAdapter implements ProviderAdapter {
+  readonly key: string;
+  readonly descriptor: AdapterDescriptor;
+  constructor(private readonly kind: CliKind) {
+    const spec = specs[kind];
+    this.key = spec.key;
+    this.descriptor = {
+      adapterKey: spec.key,
+      kind: 'cli-agent',
+      displayName: spec.name,
+      vendor: kind === 'codex' ? 'OpenAI' : kind === 'claude' ? 'Anthropic' : 'Google',
+      documentationUrl: spec.url,
+      capabilities: spec.capabilities,
+    };
+  }
+  async checkDependencies(): Promise<DependencyReport> {
+    const spec = specs[this.kind],
+      resolvedPath = await locate(spec.executable);
+    let version: string | null = null;
+    if (resolvedPath) {
+      version = await new Promise((resolve) => {
+        const child = spawn(resolvedPath, ['--version'], { shell: false, windowsHide: true });
+        let output = '';
+        const timeout = setTimeout(() => child.kill(), 5000);
+        child.stdout?.on('data', (data: Buffer) => {
+          output += String(data).slice(0, 200);
+        });
+        child.once('error', () => {
+          clearTimeout(timeout);
+          resolve(null);
+        });
+        child.once('close', (code) => {
+          clearTimeout(timeout);
+          resolve(code === 0 ? output.trim() : null);
+        });
+      });
+    }
+    return {
+      adapterKey: spec.key,
+      status: resolvedPath && version ? 'available' : 'missing-dependency',
+      checks: [
+        {
+          name: spec.executable,
+          required: true,
+          found: !!resolvedPath && !!version,
+          version,
+          minimumVersion: null,
+          resolvedPath,
+          message: resolvedPath ? null : 'Executable not found',
+        },
+      ],
+      checkedAt: nowTimestamp(),
+    };
+  }
+  async getCapabilities(): Promise<AgentCapabilities> {
+    return this.descriptor.capabilities;
+  }
+  async startSession(input: {
+    sessionId: string;
+    workingDirectory: string;
+  }): Promise<AdapterSessionHandle> {
+    return { sessionId: input.sessionId, externalSessionId: null };
+  }
+  execute(
+    _session: AdapterSessionHandle,
+    _request: ExecutionRequest,
+    _context: AdapterContext,
+  ): AdapterRun {
+    throw new DevBrainError(
+      'UNSUPPORTED',
+      'Use OperationalExecutionService for authorized CLI execution',
+    );
+  }
+  async endSession(): Promise<void> {}
+}
+
+export const createBuiltinRegistry = (): ProviderRegistry => {
+  const registry = new ProviderRegistry();
+  for (const kind of ['codex', 'claude', 'antigravity'] as const)
+    registry.register(new CliAdapter(kind));
+  return registry;
+};

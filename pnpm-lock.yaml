@@ -117,6 +117,12 @@ importers:
       '@devbrain/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@devbrain/core':
+        specifier: workspace:*
+        version: link:../core
+      '@devbrain/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
       '@devbrain/provider-sdk':
         specifier: workspace:*
         version: link:../provider-sdk
