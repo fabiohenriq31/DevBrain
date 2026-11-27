@@ -3,6 +3,7 @@
 Data: 2026-11-27. Branch: `phase-02/consolidation`. Base: `develop` em
 `3cd7161`; merge de `phase-02/claude-intelligence` em `aeb403f`, que já contém
 o gateway do Codex. A interface Antigravity veio de `develop`.
+PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
 
 ## Entregas integradas
 
