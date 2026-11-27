@@ -310,3 +310,47 @@ consentir de forma informada. Nenhum orçamento é apresentado como garantido se
   não sobreviva parcialmente.
 - `ProviderAdapter.execute` dos adaptadores CLI continua `UNSUPPORTED` e está documentado:
   o único caminho de execução é `OperationalExecutionService`.
+
+## ADR-0022: arquitetura da Central de IA, guardrails não contornáveis de roteamento/privacidade e contabilidade honesta de cotas
+
+**Status:** aceita (Fase 02)
+
+**Contexto.** A Fase 02 expande a antiga tela de Agentes e Provedores para uma plataforma
+completa de recursos de IA (11 subáreas: Visão Geral, Marketplace, Cadastro Assistido,
+Minhas Conexões, Catálogo de Modelos, Agentes Dev com OpenCode, Modelos Locais, Cotas,
+Créditos e Orçamento, Estratégias de Roteamento/Privacidade, Benchmarks e Diagnóstico).
+Sem regras rígidas de UX e domínio, surgiriam quatro riscos: poluição da barra lateral
+principal, saldos globais enganosos somando moedas ou tokens heterogêneos, vazamento de
+código sensível por estratégias de roteamento permissivas, e downloads/testes pagos sem
+consentimento explícito.
+
+**Decisão.**
+
+1. **Navegação coesa.** A barra lateral esquerda permanece enxuta com cinco seções
+   principais (`Workspace`, `Projetos`, `Central de IA`, `Segurança`, `Configurações`);
+   as 11 áreas da Central de IA vivem em abas horizontais internas e contam com atalhos
+   diretos na Paleta de Comandos (`Ctrl+K`).
+2. **Contabilidade honesta de cotas, reservas e moedas.**
+   - `computeQuotaBreakdown` separa capacidade **Nominal**, **Consumida**, **Reservada**
+     (`held`), **Estimada/Incerta** (`uncertain`), **Disponível** e **Desconhecida**.
+     Quando `limit === null`, `utilizationPercent` é estritamente `null` (jamais inventado).
+   - `summarizeUsageRecords` agrega custos exclusivamente por código de moeda (`USD`, `BRL`
+     etc.), nunca soma unidades incompatíveis, nunca apresenta um saldo global fictício de
+     tokens e contabiliza chamadas de custo desconhecido separadamente (alinhado ao ADR-0020).
+3. **Chave válida vs. inferência validada.** A UI diferencia explicitamente evidência
+   `provider-api` (credencial autenticada no provedor) de `successful-inference`
+   (inferência real concluída com sucesso), exigindo autorização explícita do usuário antes
+   de disparar testes de inferência que possam consumir créditos ou cotas.
+4. **Guardrails não contornáveis de estratégia e privacidade por projeto.**
+   - *Somente gratuito* (`free-only`) proíbe `allowPaid`, `allowUnknownCost`, tetos maiores
+     que zero e qualquer rota habilitada com preço pago ou `null` (preço desconhecido não
+     equivale a gratuito).
+   - *Somente local* (`local-only`) e projetos classificados como *Restrito* exigem
+     `privacy.mode = 'local-only'` e bloqueiam rotas externas e submissão de prompts a
+     agentes CLI conectados a nuvens externas diretamente no Workspace.
+   - Estratégias nunca podem exceder o teto diário global do Core nem enfraquecer a
+     classificação de privacidade do projeto ativo.
+5. **Modelos locais sob consentimento explícito.** Estimativas de RAM/VRAM são rotuladas
+   como aproximações (`Estimativa — não é garantia`), e `ai.local.pull` só é invocado após
+   confirmação explícita (`confirm: true`), com acompanhamento em tempo real e cancelamento
+   via `ai.local.cancelPull`.
