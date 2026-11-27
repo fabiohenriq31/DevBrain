@@ -7,6 +7,7 @@ import type {
   CredentialReference,
   DependencyReport,
   ExecutionStatus,
+  ModelDefinition,
   PermissionPolicy,
   Project,
   ProviderProfile,
@@ -32,6 +33,7 @@ import {
   FolderGit2,
   HelpCircle,
   LayoutPanelLeft,
+  Lock,
   PanelRight,
   Settings,
   ShieldAlert,
@@ -46,6 +48,7 @@ import {
   type AppNotification,
   type PaletteCommand,
 } from './components/Overlays';
+import { PRIVACY_CLASSIFICATIONS, callAiChannel, type ProjectPrivacyClass } from './lib/ai-center';
 import { describeError, invoke, subscribe, type DescribedError } from './lib/bridge';
 import {
   describeEnforcement,
@@ -56,7 +59,8 @@ import {
 } from './lib/i18n';
 import { loadUiPreferences, saveUiPreferences, type UiPreferences } from './lib/preferences';
 import './styles.css';
-import { AgentsProvidersView } from './views/AgentsProvidersView';
+import { AiResourceCenterView } from './views/ai-center/AiResourceCenterView';
+import type { AiCenterTab } from './views/ai-center/OverviewSection';
 import { ApprovalsSecurityView } from './views/ApprovalsSecurityView';
 import { OnboardingModal } from './views/OnboardingModal';
 import { ProjectsView } from './views/ProjectsView';
@@ -74,6 +78,7 @@ export const App = () => {
   }, []);
 
   const [section, setSection] = useState<NavSection>('workspace');
+  const [aiCenterTab, setAiCenterTab] = useState<AiCenterTab>('overview');
   const [requestedSessionId, setRequestedSessionId] = useState<string | null>(null);
 
   // Core state
@@ -89,6 +94,7 @@ export const App = () => {
   const [dependencyReports, setDependencyReports] = useState<Record<string, DependencyReport>>({});
   const [providers, setProviders] = useState<ProviderProfile[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [discoveredAiModels, setDiscoveredAiModels] = useState<ModelDefinition[]>([]);
   const [credentials, setCredentials] = useState<CredentialReference[]>([]);
   const [policies, setPolicies] = useState<PermissionPolicy[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
@@ -225,6 +231,11 @@ export const App = () => {
         invoke('approvals.listPending', {}),
       ]);
 
+      const aiModelsOutcome = await callAiChannel('ai.models.list', {});
+      if (aiModelsOutcome.status === 'ok') {
+        setDiscoveredAiModels([...aiModelsOutcome.data]);
+      }
+
       setStorageHealth(health);
       setSettings(cfg);
       setProjects(allProjects);
@@ -287,6 +298,27 @@ export const App = () => {
     const activeList = projects.filter((p) => !p.archivedAt);
     return activeList.find((p) => p.id === prefs.activeProjectId) ?? activeList[0] ?? null;
   }, [prefs.activeProjectId, projects]);
+
+  const activeProjectPrivacy: ProjectPrivacyClass = activeProject
+    ? (prefs.projectPrivacy[activeProject.id] ?? 'personal-private')
+    : 'personal-private';
+
+  const handleChangeProjectPrivacy = useCallback(
+    (projectId: string, next: ProjectPrivacyClass) => {
+      updatePrefs({
+        projectPrivacy: {
+          ...prefs.projectPrivacy,
+          [projectId]: next,
+        },
+      });
+    },
+    [prefs.projectPrivacy, updatePrefs],
+  );
+
+  const openAiCenterTab = useCallback((tab: AiCenterTab) => {
+    setAiCenterTab(tab);
+    setSection('agents');
+  }, []);
 
   const handleSelectProject = useCallback(
     (projectId: string | null) => {
@@ -443,9 +475,67 @@ export const App = () => {
       },
       {
         id: 'go-agents',
-        label: pt ? 'Ir para Central de Agentes e Provedores' : 'Go to Agents & Providers',
+        label: pt ? 'Ir para Central de IA (Visão Geral)' : 'Go to AI Resource Center',
         shortcut: 'Ctrl+3',
-        run: () => setSection('agents'),
+        run: () => openAiCenterTab('overview'),
+      },
+      {
+        id: 'go-ai-marketplace',
+        label: pt
+          ? 'Central de IA: Marketplace de Provedores e Cadastro Assistido'
+          : 'AI Center: Provider Marketplace & Guided Signup',
+        run: () => openAiCenterTab('marketplace'),
+      },
+      {
+        id: 'go-ai-connections',
+        label: pt ? 'Central de IA: Minhas Conexões' : 'AI Center: My Connections',
+        run: () => openAiCenterTab('connections'),
+      },
+      {
+        id: 'go-ai-models',
+        label: pt ? 'Central de IA: Catálogo de Modelos' : 'AI Center: Model Catalog',
+        run: () => openAiCenterTab('models'),
+      },
+      {
+        id: 'go-ai-dev-agents',
+        label: pt
+          ? 'Central de IA: Agentes de Desenvolvimento (Claude, Codex, Antigravity, OpenCode)'
+          : 'AI Center: Development Agents',
+        run: () => openAiCenterTab('agents'),
+      },
+      {
+        id: 'go-ai-local',
+        label: pt
+          ? 'Central de IA: Modelos Locais (Ollama / LM Studio)'
+          : 'AI Center: Local Models',
+        run: () => openAiCenterTab('local'),
+      },
+      {
+        id: 'go-ai-quotas',
+        label: pt ? 'Central de IA: Cotas e Disponibilidade' : 'AI Center: Quotas & Availability',
+        run: () => openAiCenterTab('quotas'),
+      },
+      {
+        id: 'go-ai-credits',
+        label: pt ? 'Central de IA: Créditos e Orçamento' : 'AI Center: Credits & Budget',
+        run: () => openAiCenterTab('credits'),
+      },
+      {
+        id: 'go-ai-routing',
+        label: pt
+          ? 'Central de IA: Estratégias de Roteamento e Privacidade'
+          : 'AI Center: Routing Strategies & Privacy',
+        run: () => openAiCenterTab('routing'),
+      },
+      {
+        id: 'go-ai-benchmarks',
+        label: pt ? 'Central de IA: Benchmarks' : 'AI Center: Benchmarks',
+        run: () => openAiCenterTab('benchmarks'),
+      },
+      {
+        id: 'go-ai-diagnostics',
+        label: pt ? 'Central de IA: Diagnóstico e Histórico' : 'AI Center: Diagnostics & History',
+        run: () => openAiCenterTab('diagnostics'),
       },
       {
         id: 'go-security',
@@ -484,6 +574,7 @@ export const App = () => {
     ],
     [
       handleImportProjectQuick,
+      openAiCenterTab,
       prefs.inspectorOpen,
       prefs.sidebarCollapsed,
       pt,
@@ -658,6 +749,20 @@ export const App = () => {
               {activeProject.rootPath}
             </div>
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              <Badge
+                tone={
+                  activeProjectPrivacy === 'restricted'
+                    ? 'danger'
+                    : activeProjectPrivacy === 'commercial-confidential'
+                      ? 'warning'
+                      : 'outline'
+                }
+              >
+                <Lock size={10} />{' '}
+                {pt
+                  ? PRIVACY_CLASSIFICATIONS[activeProjectPrivacy].labelPt
+                  : PRIVACY_CLASSIFICATIONS[activeProjectPrivacy].labelEn}
+              </Badge>
               {activeProject.isGitRepository ? <Badge tone="info">Git</Badge> : null}
               {activeProject.technologies.slice(0, 6).map((tech) => (
                 <Badge key={tech.id} tone="outline">
@@ -801,6 +906,11 @@ export const App = () => {
             activeProject={activeProject}
             agents={agents}
             providers={providers}
+            availableModels={discoveredAiModels}
+            projectPrivacy={activeProjectPrivacy}
+            onAgentModelUpdated={async () => {
+              setAgents(await invoke('agents.list', {}));
+            }}
             pendingApprovals={pendingApprovals}
             requestedSessionId={requestedSessionId}
             terminalAutoScroll={prefs.terminalAutoScroll}
@@ -826,6 +936,8 @@ export const App = () => {
             activeProjectId={activeProject?.id ?? null}
             agents={agents}
             policies={policies}
+            projectPrivacyMap={prefs.projectPrivacy}
+            onChangeProjectPrivacy={handleChangeProjectPrivacy}
             onSelectProject={handleSelectProject}
             onOpenWorkspaceSession={(projectId, sessionId) => {
               handleSelectProject(projectId);
@@ -840,17 +952,31 @@ export const App = () => {
         ) : null}
 
         {section === 'agents' ? (
-          <AgentsProvidersView
+          <AiResourceCenterView
+            initialTab={aiCenterTab}
+            projects={projects}
+            activeProject={activeProject}
+            projectPrivacy={activeProjectPrivacy}
+            onChangeProjectPrivacy={(next) => {
+              if (activeProject) handleChangeProjectPrivacy(activeProject.id, next);
+            }}
+            selectedStrategyPreset={prefs.selectedStrategyPreset}
+            onChangeStrategyPreset={(preset) => updatePrefs({ selectedStrategyPreset: preset })}
+            signupQueue={prefs.signupQueue}
+            onUpdateSignupQueue={(next) => updatePrefs({ signupQueue: next })}
             adapters={adapters}
             providers={providers}
             agents={agents}
             credentials={credentials}
             policies={policies}
+            settings={settings}
             dependencyReports={dependencyReports}
             runningProviderIds={runningProviderIds}
             runningAgentIds={runningAgentIds}
             onCheckAdapter={handleCheckAdapter}
-            onRefreshAll={refreshAll}
+            onRefreshCore={refreshAll}
+            onModelsChanged={(models) => setDiscoveredAiModels(models)}
+            onOpenWorkspace={() => setSection('workspace')}
             language={language}
           />
         ) : null}

@@ -35,6 +35,7 @@ import {
   RotateCcw,
   Trash2,
 } from 'lucide-react';
+import { PRIVACY_CLASSIFICATIONS, type ProjectPrivacyClass } from '../lib/ai-center';
 import { describeError, invoke } from '../lib/bridge';
 import { formatSessionStatus, formatTimestamp, type AppLanguage } from '../lib/i18n';
 
@@ -44,6 +45,8 @@ export interface ProjectsViewProps {
   activeProjectId: string | null;
   agents: readonly Agent[];
   policies: readonly PermissionPolicy[];
+  projectPrivacyMap?: Readonly<Record<string, ProjectPrivacyClass>> | undefined;
+  onChangeProjectPrivacy?: ((projectId: string, next: ProjectPrivacyClass) => void) | undefined;
   onSelectProject: (projectId: string | null) => void;
   onOpenWorkspaceSession: (projectId: string, sessionId?: string) => void;
   onRefreshProjects: () => Promise<void>;
@@ -56,6 +59,8 @@ export const ProjectsView = ({
   activeProjectId,
   agents,
   policies,
+  projectPrivacyMap = {},
+  onChangeProjectPrivacy,
   onSelectProject,
   onOpenWorkspaceSession,
   onRefreshProjects,
@@ -715,7 +720,7 @@ export const ProjectsView = ({
                         {pt ? 'Salvar alterações' : 'Save changes'}
                       </Button>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr 1fr', gap: 10 }}>
                       <Field label={pt ? 'Nome' : 'Name'} required>
                         {(props) => (
                           <Input
@@ -734,6 +739,33 @@ export const ProjectsView = ({
                           />
                         )}
                       </Field>
+                      <Field label={pt ? 'Classificação de privacidade' : 'Privacy classification'}>
+                        {(props) => (
+                          <Select
+                            {...props}
+                            value={projectPrivacyMap[selected.id] ?? 'personal-private'}
+                            onChange={(e) =>
+                              onChangeProjectPrivacy?.(
+                                selected.id,
+                                e.target.value as ProjectPrivacyClass,
+                              )
+                            }
+                          >
+                            {Object.values(PRIVACY_CLASSIFICATIONS).map((spec) => (
+                              <option key={spec.id} value={spec.id}>
+                                {pt ? spec.labelPt : spec.labelEn}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                      </Field>
+                    </div>
+                    <div className="db-muted" style={{ fontSize: 11.5 }}>
+                      {
+                        PRIVACY_CLASSIFICATIONS[
+                          projectPrivacyMap[selected.id] ?? 'personal-private'
+                        ].warningsPt[0]
+                      }
                     </div>
                     <div className="db-faint" style={{ fontSize: 11.5 }}>
                       {pt ? 'Cadastrado em: ' : 'Created: '}

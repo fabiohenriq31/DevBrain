@@ -10,6 +10,7 @@ import {
   type ExecutionStatus,
   type GitDiff,
   type GitStatus,
+  type ModelDefinition,
   type Project,
   type ProviderProfile,
   type SessionHistory,
@@ -34,9 +35,11 @@ import {
 import {
   AlertTriangle,
   Bot,
+  Cpu,
   FolderOpen,
   GitBranch,
   History,
+  Lock,
   Play,
   Plus,
   RotateCcw,
@@ -45,6 +48,7 @@ import {
 } from 'lucide-react';
 import { DiffViewer } from '../components/DiffViewer';
 import { TerminalPane } from '../components/TerminalPane';
+import { PRIVACY_CLASSIFICATIONS, type ProjectPrivacyClass } from '../lib/ai-center';
 import { describeError, invoke, subscribe, type DescribedError } from '../lib/bridge';
 import {
   describeEnforcement,
@@ -67,6 +71,9 @@ export interface WorkspaceViewProps {
   activeProject: Project | null;
   agents: readonly Agent[];
   providers: readonly ProviderProfile[];
+  availableModels?: readonly ModelDefinition[] | undefined;
+  projectPrivacy?: ProjectPrivacyClass | undefined;
+  onAgentModelUpdated?: (() => Promise<void>) | undefined;
   pendingApprovals: readonly ApprovalRequest[];
   requestedSessionId: string | null;
   terminalAutoScroll: boolean;
@@ -91,6 +98,9 @@ export const WorkspaceView = ({
   activeProject,
   agents,
   providers,
+  availableModels = [],
+  projectPrivacy = 'personal-private',
+  onAgentModelUpdated,
   pendingApprovals,
   requestedSessionId,
   terminalAutoScroll,
@@ -154,6 +164,60 @@ export const WorkspaceView = ({
     () => sessions.find((s) => s.id === selectedSessionId) ?? null,
     [sessions, selectedSessionId],
   );
+
+  const privacyMeta = PRIVACY_CLASSIFICATIONS[projectPrivacy];
+  const isAgentTargetLocal = useMemo(() => {
+    if (!selectedAgent) return false;
+    if (selectedProvider?.provider.kind === 'local-model') return true;
+    if (
+      selectedProvider?.provider.adapterKey === 'opencode-cli' &&
+      selectedAgent.model &&
+      /^(ollama|lmstudio|local)\//i.test(selectedAgent.model)
+    ) {
+      return true;
+    }
+    return false;
+  }, [selectedAgent, selectedProvider]);
+
+  const isRestrictedExternalPromptBlocked =
+    projectPrivacy === 'restricted' &&
+    mode === 'prompt' &&
+    Boolean(selectedAgent) &&
+    !isAgentTargetLocal;
+
+  const selectableModelOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    if (selectedAgent?.model) {
+      map.set(selectedAgent.model, selectedAgent.model);
+    }
+    for (const mod of selectedProvider?.config.models ?? []) {
+      if (!map.has(mod.id)) map.set(mod.id, mod.displayName ?? mod.id);
+    }
+    for (const m of availableModels) {
+      const value = m.upstreamModelId;
+      const label = `${m.name} [${m.providerId}]`;
+      if (!map.has(value)) map.set(value, label);
+    }
+    return [...map.entries()].map(([value, label]) => ({ value, label }));
+  }, [availableModels, selectedAgent?.model, selectedProvider?.config.models]);
+
+  const [updatingModel, setUpdatingModel] = useState(false);
+  const handleChangeAgentModel = async (nextModelValue: string) => {
+    if (!selectedAgent) return;
+    setUpdatingModel(true);
+    setOpError(null);
+    try {
+      await invoke('agents.update', {
+        id: selectedAgent.id,
+        model: nextModelValue.trim() ? nextModelValue.trim() : null,
+      });
+      await onAgentModelUpdated?.();
+    } catch (e) {
+      setOpError(describeError(e, language));
+    } finally {
+      setUpdatingModel(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedAgentId && agents[0]) {
@@ -427,6 +491,22 @@ export const WorkspaceView = ({
     if (!activeProject || !selectedAgent || !selectedWorkspaceId) return;
     if (mode === 'prompt' && !promptText.trim()) return;
     if (mode === 'command' && !cmdExecutable.trim()) return;
+    if (isRestrictedExternalPromptBlocked) {
+      setOpError({
+        code: 'PERMISSION_DENIED',
+        title: pt
+          ? 'Projeto Restrito bloqueia envio de prompts para nuvem externa'
+          : 'Restricted project blocks external cloud prompts',
+        message: pt
+          ? 'Este projeto está classificado como Restrito (somente execução local). Prompts ao agente selecionado enviariam contexto para endpoint externo.'
+          : 'This project is classified as Restricted (local-only).',
+        remediation: pt
+          ? 'Selecione um runtime/modelo local (ex.: OpenCode com ollama/<modelo>), utilize Processo autorizado (sem shell) ou ajuste a classificação em Projetos.'
+          : 'Select a local runtime/model or adjust the project privacy classification.',
+        retryable: false,
+      });
+      return;
+    }
 
     setOpError(null);
     setSubmitting(true);
@@ -636,6 +716,18 @@ export const WorkspaceView = ({
 
         {/* Execution status & cancel controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Badge
+            tone={
+              projectPrivacy === 'restricted'
+                ? 'danger'
+                : projectPrivacy === 'commercial-confidential'
+                  ? 'warning'
+                  : 'outline'
+            }
+            title={privacyMeta.summaryPt}
+          >
+            <Lock size={10} /> {pt ? privacyMeta.labelPt : privacyMeta.labelEn}
+          </Badge>
           {executionStatus ? (
             <Badge tone={formatExecutionStatus(executionStatus, language).tone} dot>
               {formatExecutionStatus(executionStatus, language).label}
@@ -736,13 +828,13 @@ export const WorkspaceView = ({
               icon={<Bot size={12} />}
               onClick={() => onNavigate('agents')}
             >
-              {pt ? 'Abrir Central de Agentes' : 'Open Agents Hub'}
+              {pt ? 'Abrir Central de IA' : 'Open AI Resource Center'}
             </Button>
           }
         >
           {pt
-            ? 'Cadastre Claude Code, OpenAI Codex ou Google Antigravity CLI na Central de Agentes e Provedores.'
-            : 'Register an agent in Agents & Providers.'}
+            ? 'Cadastre Claude Code, OpenAI Codex, Google Antigravity ou OpenCode na Central de IA.'
+            : 'Register an agent in the AI Resource Center.'}
         </Banner>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -760,14 +852,38 @@ export const WorkspaceView = ({
                 aria-label={pt ? 'Agente selecionado' : 'Selected agent'}
                 value={selectedAgent?.id ?? ''}
                 onChange={(e) => setSelectedAgentId(e.target.value)}
-                style={{ width: 230, height: 28 }}
+                style={{ width: 220, height: 28 }}
               >
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} {a.model ? `(${a.model})` : ''}
+                {agents.map((a) => {
+                  const prov = providers.find((p) => p.provider.id === a.providerId);
+                  return (
+                    <option key={a.id} value={a.id}>
+                      {a.name} {prov ? `[${prov.provider.adapterKey}]` : ''}
+                    </option>
+                  );
+                })}
+              </Select>
+              <Select
+                aria-label={pt ? 'Modelo do agente' : 'Agent model'}
+                value={selectedAgent?.model ?? ''}
+                disabled={!selectedAgent || updatingModel || isRunning}
+                onChange={(e) => void handleChangeAgentModel(e.target.value)}
+                style={{ width: 220, height: 28 }}
+              >
+                <option value="">
+                  {pt ? 'Modelo padrão do runtime' : 'Runtime default model'}
+                </option>
+                {selectableModelOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </Select>
+              {selectedAgent?.model ? (
+                <Badge tone="info" mono>
+                  <Cpu size={10} /> {selectedAgent.model}
+                </Badge>
+              ) : null}
               {providerBadges ? (
                 <Badge tone={providerBadges.primary.tone} dot>
                   {providerBadges.primary.label}
@@ -797,6 +913,27 @@ export const WorkspaceView = ({
               </Button>
             </div>
           </div>
+
+          {isRestrictedExternalPromptBlocked ? (
+            <Banner
+              tone="danger"
+              icon={<Lock size={14} />}
+              title={
+                pt
+                  ? 'Projeto classificado como Restrito: envio a provedores externos bloqueado'
+                  : 'Restricted project: external cloud prompts blocked'
+              }
+              actions={
+                <Button size="xs" variant="secondary" onClick={() => onNavigate('agents')}>
+                  {pt ? 'Configurar modelo local' : 'Configure local model'}
+                </Button>
+              }
+            >
+              {pt
+                ? 'Somente runtimes locais (ex.: OpenCode com ollama/<modelo> ou provedor local-model) ou Processos autorizados locais podem ser executados neste projeto.'
+                : 'Only local runtimes or authorized local processes are allowed in Restricted projects.'}
+            </Banner>
+          ) : null}
 
           {enforcement && enforcement.level !== 'per-action' && mode === 'prompt' ? (
             <div
@@ -855,7 +992,7 @@ export const WorkspaceView = ({
                   size="sm"
                   icon={<Play size={13} />}
                   loading={submitting}
-                  disabled={!promptText.trim() || isRunning}
+                  disabled={!promptText.trim() || isRunning || isRestrictedExternalPromptBlocked}
                   onClick={() => void handleSubmitExecution()}
                 >
                   <span>{pt ? 'Executar' : 'Run'}</span>

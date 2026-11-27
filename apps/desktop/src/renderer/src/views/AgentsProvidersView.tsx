@@ -1,13 +1,16 @@
-import { useState } from 'react';
-import type {
-  AdapterDescriptor,
-  Agent,
-  AgentCapabilities,
-  CredentialReference,
-  DependencyReport,
-  PermissionPolicy,
-  ProviderKind,
-  ProviderProfile,
+import { useMemo, useState } from 'react';
+import {
+  NO_CAPABILITIES,
+  type AdapterDescriptor,
+  type Agent,
+  type AgentCapabilities,
+  type CredentialReference,
+  type DependencyReport,
+  type ModelDefinition,
+  type PermissionPolicy,
+  type ProviderConnection,
+  type ProviderKind,
+  type ProviderProfile,
 } from '@devbrain/contracts';
 import {
   Badge,
@@ -54,10 +57,34 @@ export interface AgentsProvidersViewProps {
   dependencyReports: Readonly<Record<string, DependencyReport>>;
   runningProviderIds: ReadonlySet<string>;
   runningAgentIds: ReadonlySet<string>;
+  availableModels?: readonly ModelDefinition[] | undefined;
+  gatewayConnections?: readonly ProviderConnection[] | undefined;
+  embedded?: boolean | undefined;
+  onOpenInWorkspace?: (() => void) | undefined;
   onCheckAdapter: (adapterKey: string) => Promise<void>;
   onRefreshAll: () => Promise<void>;
   language: AppLanguage;
 }
+
+const OPENCODE_FALLBACK_DESCRIPTOR: AdapterDescriptor = {
+  adapterKey: 'opencode-cli',
+  kind: 'cli-agent',
+  displayName: 'OpenCode',
+  vendor: 'Anomaly / OpenCode',
+  documentationUrl: 'https://opencode.ai/docs/cli/commands/',
+  capabilities: {
+    ...NO_CAPABILITIES,
+    streaming: true,
+    interrupt: true,
+    toolUse: true,
+    fileEdits: true,
+    shellCommands: true,
+    mcp: true,
+    structuredOutput: true,
+    costModel: 'unknown',
+    enforcement: 'none',
+  },
+};
 
 const CAPABILITY_ITEMS: readonly {
   key: keyof Pick<
@@ -93,12 +120,23 @@ export const AgentsProvidersView = ({
   dependencyReports,
   runningProviderIds,
   runningAgentIds,
+  availableModels = [],
+  gatewayConnections = [],
+  embedded = false,
+  onOpenInWorkspace,
   onCheckAdapter,
   onRefreshAll,
   language,
 }: AgentsProvidersViewProps) => {
   const pt = language === 'pt-BR';
-  const [tab, setTab] = useState<'catalog' | 'providers' | 'agents' | 'credentials'>('catalog');
+  const [tab, setTab] = useState<'catalog' | 'providers' | 'agents' | 'credentials'>('agents');
+  const effectiveAdapters = useMemo(
+    () =>
+      adapters.some((a) => a.adapterKey === 'opencode-cli')
+        ? adapters
+        : [...adapters, OPENCODE_FALLBACK_DESCRIPTOR],
+    [adapters],
+  );
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: 'danger' | 'success'; text: string } | null>(
     null,
@@ -339,7 +377,7 @@ export const AgentsProvidersView = ({
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div
         style={{
-          padding: '12px 16px',
+          padding: embedded ? '8px 12px' : '12px 16px',
           borderBottom: `1px solid ${tokens.color.border}`,
           display: 'flex',
           alignItems: 'center',
@@ -350,13 +388,15 @@ export const AgentsProvidersView = ({
         }}
       >
         <div>
-          <h2 style={{ margin: 0, fontSize: 15 }}>
-            {pt ? 'Central de Agentes e Provedores' : 'Agents & Providers Hub'}
+          <h2 style={{ margin: 0, fontSize: embedded ? 13.5 : 15 }}>
+            {pt
+              ? 'Agentes de Desenvolvimento, Runtimes CLI e Cofre DPAPI'
+              : 'Development Agents, CLI Runtimes & DPAPI Vault'}
           </h2>
           <div className="db-muted" style={{ fontSize: 12 }}>
             {pt
-              ? 'Disponibilidade derivada exclusivamente de evidências reais do motor — sem cotas ou tokens fictícios.'
-              : 'Readiness derived strictly from verified engine evidence — zero fictional quotas.'}
+              ? 'Distingue explicitamente Modelo · Provedor · Agente · Runtime · Conexão · Política (Codex, Claude Code, Antigravity e OpenCode).'
+              : 'Explicitly distinguishes Model · Provider · Agent · Runtime · Connection · Policy.'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -392,23 +432,23 @@ export const AgentsProvidersView = ({
       <Tabs
         tabs={[
           {
-            id: 'catalog',
-            label: pt ? 'Integrações conhecidas' : 'Known integrations',
-            badge: adapters.length,
-          },
-          {
-            id: 'providers',
-            label: pt ? 'Provedores configurados' : 'Configured providers',
-            badge: providers.length,
-          },
-          {
             id: 'agents',
-            label: pt ? 'Agentes registrados' : 'Registered agents',
+            label: pt ? 'Agentes de desenvolvimento' : 'Development agents',
             badge: agents.length,
           },
           {
+            id: 'catalog',
+            label: pt ? 'Adaptadores CLI (Codex, Claude, Antigravity, OpenCode)' : 'CLI Adapters',
+            badge: effectiveAdapters.length,
+          },
+          {
+            id: 'providers',
+            label: pt ? 'Provedores CLI configurados' : 'Configured CLI providers',
+            badge: providers.length,
+          },
+          {
             id: 'credentials',
-            label: pt ? 'Cofre de credenciais' : 'Credentials vault',
+            label: pt ? 'Cofre seguro de credenciais' : 'Credentials vault',
             badge: credentials.length,
           },
         ]}
@@ -441,11 +481,17 @@ export const AgentsProvidersView = ({
 
         {tab === 'catalog' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {adapters.map((adapter) => {
+            {effectiveAdapters.map((adapter) => {
+              const isEngineRegistered = adapters.some((a) => a.adapterKey === adapter.adapterKey);
               const report = dependencyReports[adapter.adapterKey];
               const depBadge = report
                 ? formatDependencyStatus(report.status, language)
-                : { label: pt ? 'Não verificado' : 'Unchecked', tone: 'outline' as const };
+                : !isEngineRegistered
+                  ? {
+                      label: pt ? 'Aguarda merge do adaptador CLI' : 'Pending engine merge',
+                      tone: 'warning' as const,
+                    }
+                  : { label: pt ? 'Não verificado' : 'Unchecked', tone: 'outline' as const };
               const enf = describeEnforcement(adapter.capabilities, language);
               const configured = providers.find(
                 (p) => p.provider.adapterKey === adapter.adapterKey,
@@ -512,6 +558,7 @@ export const AgentsProvidersView = ({
                         variant="secondary"
                         icon={<RefreshCw size={12} />}
                         loading={busy}
+                        disabled={!isEngineRegistered}
                         onClick={() => void onCheckAdapter(adapter.adapterKey)}
                       >
                         {pt ? 'Verificar CLI' : 'Check CLI'}
@@ -794,58 +841,127 @@ export const AgentsProvidersView = ({
                 {
                   key: 'name',
                   header: pt ? 'Agente' : 'Agent',
-                  render: (a) => (
-                    <div>
-                      <strong>{a.name}</strong>
-                      {a.role ? (
-                        <div className="db-muted" style={{ fontSize: 11 }}>
-                          {a.role}
+                  render: (a) => {
+                    const st = formatAgentStatus(a, runningAgentIds.has(a.id), language);
+                    return (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <strong>{a.name}</strong>
+                          <Badge tone={st.tone} dot>
+                            {st.label}
+                          </Badge>
                         </div>
+                        {a.role ? (
+                          <div className="db-muted" style={{ fontSize: 11 }}>
+                            {a.role}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: 'model',
+                  header: pt ? 'Modelo vinculado' : 'Model',
+                  render: (a) => (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span className="db-mono" style={{ fontSize: 11.5 }}>
+                        {a.model ?? (pt ? 'Padrão do runtime' : 'Runtime default')}
+                      </span>
+                      {availableModels.length > 0 ? (
+                        <Select
+                          aria-label={pt ? 'Selecionar modelo para o agente' : 'Select agent model'}
+                          value={a.model ?? ''}
+                          onChange={(e) => {
+                            const nextModel = e.target.value || null;
+                            void invoke('agents.update', { id: a.id, model: nextModel }).then(() =>
+                              onRefreshAll(),
+                            );
+                          }}
+                          style={{ height: 24, fontSize: 11, maxWidth: 190 }}
+                        >
+                          <option value="">{pt ? 'Padrão do runtime' : 'Runtime default'}</option>
+                          {availableModels.map((m) => (
+                            <option key={m.id} value={m.upstreamModelId}>
+                              {m.name} ({m.providerId})
+                            </option>
+                          ))}
+                        </Select>
                       ) : null}
                     </div>
                   ),
                 },
                 {
-                  key: 'provider',
-                  header: pt ? 'Provedor' : 'Provider',
-                  render: (a) =>
-                    providers.find((p) => p.provider.id === a.providerId)?.provider.displayName ??
-                    a.providerId,
-                },
-                {
-                  key: 'status',
-                  header: pt ? 'Estado' : 'Status',
+                  key: 'providerRuntime',
+                  header: pt ? 'Provedor · Runtime' : 'Provider · Runtime',
                   render: (a) => {
-                    const st = formatAgentStatus(a, runningAgentIds.has(a.id), language);
+                    const prov = providers.find((p) => p.provider.id === a.providerId);
                     return (
-                      <Badge tone={st.tone} dot>
-                        {st.label}
-                      </Badge>
+                      <div>
+                        <div>{prov?.provider.displayName ?? a.providerId}</div>
+                        <div className="db-mono db-faint" style={{ fontSize: 10.5 }}>
+                          runtime: {prov?.provider.adapterKey ?? 'cli-agent'}
+                        </div>
+                      </div>
                     );
                   },
                 },
                 {
-                  key: 'enforcement',
-                  header: pt ? 'Interceptação' : 'Enforcement',
+                  key: 'connection',
+                  header: pt ? 'Conexão / Autenticação' : 'Connection',
                   render: (a) => {
-                    const enf = describeEnforcement(a.capabilities, language);
-                    return <Badge tone={enf.tone}>{enf.badge}</Badge>;
+                    const prov = providers.find((p) => p.provider.id === a.providerId);
+                    const cred = credentials.find((c) => c.id === prov?.provider.credentialRef);
+                    const gwConn = gatewayConnections.find(
+                      (c) => c.credentialId && c.credentialId === prov?.provider.credentialRef,
+                    );
+                    return (
+                      <div style={{ fontSize: 11.5 }}>
+                        {gwConn ? (
+                          <Badge tone="info" mono>
+                            {gwConn.id}
+                          </Badge>
+                        ) : cred ? (
+                          <span>{cred.label}</span>
+                        ) : (
+                          <span className="db-muted">
+                            {pt ? 'Sessão própria da CLI' : 'CLI session'}
+                          </span>
+                        )}
+                      </div>
+                    );
                   },
                 },
                 {
                   key: 'policy',
-                  header: pt ? 'Política' : 'Policy',
-                  render: (a) =>
-                    policies.find((pol) => pol.id === a.permissionPolicyId)?.name ??
-                    a.permissionPolicyId,
+                  header: pt ? 'Política · Interceptação' : 'Policy · Enforcement',
+                  render: (a) => {
+                    const enf = describeEnforcement(a.capabilities, language);
+                    const polName =
+                      policies.find((pol) => pol.id === a.permissionPolicyId)?.name ??
+                      a.permissionPolicyId;
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <span style={{ fontSize: 11.5 }}>{polName}</span>
+                        <Badge tone={enf.tone}>{enf.badge}</Badge>
+                      </div>
+                    );
+                  },
                 },
                 {
                   key: 'actions',
                   header: '',
                   render: (a) => (
-                    <Button size="xs" variant="secondary" onClick={() => openEditAgent(a)}>
-                      {pt ? 'Editar' : 'Edit'}
-                    </Button>
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      {onOpenInWorkspace ? (
+                        <Button size="xs" variant="primary" onClick={onOpenInWorkspace}>
+                          {pt ? 'Workspace' : 'Workspace'}
+                        </Button>
+                      ) : null}
+                      <Button size="xs" variant="secondary" onClick={() => openEditAgent(a)}>
+                        {pt ? 'Editar' : 'Edit'}
+                      </Button>
+                    </div>
                   ),
                 },
               ]}
@@ -989,7 +1105,7 @@ export const AgentsProvidersView = ({
                     }
                   }}
                 >
-                  {adapters.map((a) => (
+                  {effectiveAdapters.map((a) => (
                     <option key={a.adapterKey} value={a.adapterKey}>
                       {a.displayName} ({a.adapterKey})
                     </option>
