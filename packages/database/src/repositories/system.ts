@@ -164,6 +164,8 @@ export interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   cost: Record<string, number>;
+  /** Executions whose cost the provider did not report (`cost` is then a lower bound). */
+  unknownCostExecutions: number;
 }
 
 export class UsageRepository {
@@ -200,8 +202,10 @@ export class UsageRepository {
       params['agentId'] = filter.agentId;
     }
     const clause = where.join(' AND ');
-    const base = this.db.get<{ n: number; i: number | null; o: number | null }>(
-      `SELECT COUNT(DISTINCT execution_id) AS n, SUM(input_tokens) AS i, SUM(output_tokens) AS o
+    const base = this.db.get<{ n: number; i: number | null; o: number | null; u: number | null }>(
+      `SELECT COUNT(DISTINCT execution_id) AS n, SUM(input_tokens) AS i, SUM(output_tokens) AS o,
+         COUNT(DISTINCT CASE WHEN cost_amount IS NULL OR cost_currency IS NULL
+           THEN execution_id END) AS u
        FROM usage_records WHERE ${clause}`,
       params,
     );
@@ -215,6 +219,7 @@ export class UsageRepository {
       inputTokens: Number(base?.i ?? 0),
       outputTokens: Number(base?.o ?? 0),
       cost: Object.fromEntries(costs.map((c) => [String(c.currency), Number(c.total)])),
+      unknownCostExecutions: Number(base?.u ?? 0),
     };
   }
 }

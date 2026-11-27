@@ -10,6 +10,9 @@ import {
   SettingsPatchSchema,
   StoreCredentialInputSchema,
   CreateProjectInputSchema,
+  DEFAULT_SETTINGS,
+  ErrorCodeSchema,
+  UsageSummarySchema,
   newId,
   nowTimestamp,
 } from './index.js';
@@ -17,8 +20,8 @@ import {
 /** 0.2.0 is additive: payloads written by 0.1.0 must still parse. */
 describe('contracts 0.2.0 backward compatibility', () => {
   it('is a MINOR bump of 0.1.0', () => {
-    // 0.3.0 only adds channels (git.status / git.diff) on top of 0.2.0.
-    expect(CONTRACTS_VERSION).toBe('0.3.0');
+    // 0.3.0 adds git.status / git.diff; 0.4.0 adds budget cost-guarantee fields. Both additive.
+    expect(CONTRACTS_VERSION).toBe('0.4.0');
   });
 
   it('reads 0.1.0 projects, sessions, approvals and settings with defaults', () => {
@@ -159,5 +162,31 @@ describe('contracts 0.3.0: read-only Git channels', () => {
   it('exposes no channel that writes to Git', () => {
     const gitChannels = Object.keys(IPC_CHANNELS).filter((k) => k.startsWith('git.'));
     expect(gitChannels.sort()).toEqual(['git.diff', 'git.status']);
+  });
+});
+
+describe('contracts 0.4.0: unknown cost is never zero', () => {
+  it('reads 0.3.0 settings and usage summaries with conservative defaults', () => {
+    const settings = ApplicationSettingsSchema.parse({
+      ...DEFAULT_SETTINGS,
+      budget: { currency: 'USD', maxPerDay: 5, maxPerMonth: null },
+    });
+    expect(settings.budget.allowWithoutCostGuarantee).toBe(false);
+    const summary = UsageSummarySchema.parse({
+      period: 'day',
+      since: nowTimestamp(),
+      executions: 1,
+      inputTokens: 0,
+      outputTokens: 0,
+      cost: {},
+    });
+    expect(summary.unknownCostExecutions).toBe(0);
+    expect(ErrorCodeSchema.options).toContain('BUDGET_UNENFORCEABLE');
+  });
+
+  it('lets a settings patch opt in explicitly without resetting other budget fields', () => {
+    expect(SettingsPatchSchema.parse({ budget: { allowWithoutCostGuarantee: true } })).toEqual({
+      budget: { allowWithoutCostGuarantee: true },
+    });
   });
 });

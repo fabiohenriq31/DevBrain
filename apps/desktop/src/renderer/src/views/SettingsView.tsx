@@ -59,6 +59,7 @@ export const SettingsView = ({
   const [currency, setCurrency] = useState('USD');
   const [maxPerDay, setMaxPerDay] = useState('');
   const [maxPerMonth, setMaxPerMonth] = useState('');
+  const [allowWithoutCostGuarantee, setAllowWithoutCostGuarantee] = useState(false);
 
   const [usageDay, setUsageDay] = useState<UsageSummary | null>(null);
   const [usageMonth, setUsageMonth] = useState<UsageSummary | null>(null);
@@ -78,6 +79,7 @@ export const SettingsView = ({
     setCurrency(settings.budget.currency);
     setMaxPerDay(settings.budget.maxPerDay !== null ? String(settings.budget.maxPerDay) : '');
     setMaxPerMonth(settings.budget.maxPerMonth !== null ? String(settings.budget.maxPerMonth) : '');
+    setAllowWithoutCostGuarantee(settings.budget.allowWithoutCostGuarantee);
   }, [settings]);
 
   const loadUsage = useCallback(async () => {
@@ -122,6 +124,7 @@ export const SettingsView = ({
           currency: currency.trim().toUpperCase(),
           maxPerDay: maxPerDay.trim() ? Number(maxPerDay) : null,
           maxPerMonth: maxPerMonth.trim() ? Number(maxPerMonth) : null,
+          allowWithoutCostGuarantee,
         },
       };
       const parsed = SettingsPatchSchema.parse(rawPatch);
@@ -390,6 +393,20 @@ export const SettingsView = ({
                   )}
                 </Field>
               </div>
+              <Checkbox
+                checked={allowWithoutCostGuarantee}
+                onChange={(e) => setAllowWithoutCostGuarantee(e.target.checked)}
+                label={
+                  pt
+                    ? 'Permitir execuções SEM garantia de custo: com um teto configurado, agentes que não informam custo (Codex, Claude Code, Antigravity) rodam mesmo assim, e o teto considera apenas custos informados.'
+                    : 'Allow executions WITHOUT a cost guarantee: with a limit set, agents that do not report cost still run and the limit only counts reported costs.'
+                }
+              />
+              <div className="db-muted" style={{ fontSize: 12 }}>
+                {pt
+                  ? 'Com um teto definido e esta opção desmarcada, execuções de agentes cujo custo é desconhecido são bloqueadas (custo desconhecido nunca é tratado como zero).'
+                  : 'With a limit set and this option off, agent executions with unknown cost are blocked (unknown cost is never zero).'}
+              </div>
               <div className="db-muted" style={{ fontSize: 12 }}>
                 {pt
                   ? `Consumo registrado hoje: ${usageDay?.executions ?? 0} execução(ões), entrada=${usageDay?.inputTokens ?? 0} tok, saída=${usageDay?.outputTokens ?? 0} tok, custos informados=${
@@ -397,9 +414,13 @@ export const SettingsView = ({
                         ? Object.entries(usageDay.cost)
                             .map(([k, v]) => `${k} ${v.toFixed(4)}`)
                             .join(', ')
-                        : 'não informados pelos provedores CLI (nunca tratados como custo zero)'
-                    }. No mês: ${usageMonth?.executions ?? 0} execução(ões).`
-                  : `Today: ${usageDay?.executions ?? 0} executions.`}
+                        : 'nenhum'
+                    }, execuções com custo desconhecido=${usageDay?.unknownCostExecutions ?? 0}${
+                      (usageDay?.unknownCostExecutions ?? 0) > 0
+                        ? ' (o total informado é apenas um limite inferior)'
+                        : ''
+                    }. No mês: ${usageMonth?.executions ?? 0} execução(ões), ${usageMonth?.unknownCostExecutions ?? 0} com custo desconhecido.`
+                  : `Today: ${usageDay?.executions ?? 0} executions, ${usageDay?.unknownCostExecutions ?? 0} with unknown cost. This month: ${usageMonth?.executions ?? 0} executions, ${usageMonth?.unknownCostExecutions ?? 0} with unknown cost.`}
               </div>
             </div>
           </div>

@@ -339,13 +339,21 @@ export class SessionManager implements SessionService {
       if (!existing) throw new DevBrainError('NOT_FOUND', 'Execution not found');
       if (existing.result) throw new DevBrainError('CONFLICT', 'Execution already has a result');
       this.ctx.db.executions.saveResultSync(result);
-      if (result.usage) {
+      // An agent prompt that actually started may have consumed paid resources even when the
+      // provider reported nothing: it is recorded with unknown cost, never as zero.
+      const costBearing = existing.request.payload.kind === 'prompt' && result.startedAt !== null;
+      if (result.usage || costBearing) {
         this.ctx.db.usage.record({
           executionId: result.executionId,
           agentId: session.agentId,
           providerId: agent?.providerId ?? null,
           projectId: session.projectId,
-          usage: result.usage,
+          usage: result.usage ?? {
+            inputTokens: null,
+            outputTokens: null,
+            costAmount: null,
+            costCurrency: null,
+          },
         });
       }
       if (isLiveSession(session.status)) {

@@ -683,7 +683,23 @@ describe('authorization (effectively enforced)', () => {
       ),
     ).rejects.toMatchObject({ code: 'APPROVAL_REQUIRED' });
 
+    // Unknown cost is never zero: with a limit and an agent that cannot report cost, the
+    // limit cannot be enforced, so the execution is refused unless explicitly opted in.
     await core.settings.update({ budget: { maxPerDay: 1 } });
+    await expect(
+      core.authorization.authorizeExecution({ sessionId: session.id }, { waitForApproval: false }),
+    ).rejects.toMatchObject({ code: 'BUDGET_UNENFORCEABLE' });
+    // Plain commands carry no provider cost: the budget gate does not apply to them.
+    await expect(
+      core.authorization.authorizeExecution(
+        { sessionId: session.id, costBearing: false },
+        { waitForApproval: false },
+      ),
+    ).resolves.toMatchObject({ session: { id: session.id } });
+    await core.settings.update({ budget: { allowWithoutCostGuarantee: true } });
+    await expect(
+      core.authorization.authorizeExecution({ sessionId: session.id }, { waitForApproval: false }),
+    ).resolves.toMatchObject({ session: { id: session.id } });
     core.db.usage.record({
       executionId: newId('execution'),
       agentId: f.agent.id,
@@ -694,6 +710,19 @@ describe('authorization (effectively enforced)', () => {
     await expect(
       core.authorization.authorizeExecution({ sessionId: session.id }, { waitForApproval: false }),
     ).rejects.toMatchObject({ code: 'BUDGET_EXCEEDED' });
+    // An execution without reported cost is counted as unknown, never as zero.
+    core.db.usage.record({
+      executionId: newId('execution'),
+      agentId: f.agent.id,
+      providerId: f.providerId,
+      projectId: f.project.id,
+      usage: { inputTokens: null, outputTokens: null, costAmount: null, costCurrency: null },
+    });
+    const summary = await core.usage.summary({ period: 'day' });
+    expect(summary).toMatchObject({ executions: 2, cost: { USD: 2 }, unknownCostExecutions: 1 });
+    await core.settings.update({
+      budget: { maxPerDay: null, allowWithoutCostGuarantee: false },
+    });
 
     // Concurrency: per-agent limit 2 (settings) → the third waits.
     const r1 = await core.authorization.acquireSlot(f.agent.id);

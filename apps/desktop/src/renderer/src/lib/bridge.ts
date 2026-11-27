@@ -152,6 +152,11 @@ const ERROR_REMEDIATION_PT: Record<ErrorCode, { title: string; remediation: stri
     remediation:
       'O consumo registrado atingiu o teto diário/mensal configurado. Revise Configurações > Orçamento.',
   },
+  BUDGET_UNENFORCEABLE: {
+    title: 'Orçamento não pode ser garantido',
+    remediation:
+      'Há um teto de orçamento, mas este agente não informa custo. Remova o teto ou habilite, de forma consciente, "execuções sem garantia de custo" em Configurações.',
+  },
   INTERNAL: {
     title: 'Erro interno inesperado',
     remediation:
@@ -245,6 +250,11 @@ const ERROR_REMEDIATION_EN: Record<ErrorCode, { title: string; remediation: stri
   BUDGET_EXCEEDED: {
     title: 'Budget limit exceeded',
     remediation: 'Recorded usage reached the configured budget ceiling in Settings.',
+  },
+  BUDGET_UNENFORCEABLE: {
+    title: 'Budget cannot be guaranteed',
+    remediation:
+      'A budget limit is set but this agent does not report cost. Remove the limit or knowingly allow executions without a cost guarantee in Settings.',
   },
   INTERNAL: {
     title: 'Unexpected internal error',

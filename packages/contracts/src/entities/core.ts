@@ -414,8 +414,13 @@ export const UsageSummarySchema = z.object({
   executions: z.number().int().nonnegative(),
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
-  /** Per currency. */
+  /** Per currency; only costs REPORTED by providers. */
   cost: z.record(z.string(), z.number().nonnegative()),
+  /**
+   * @since 0.4.0 — executions in the period whose cost the provider did not report. When
+   * non-zero, `cost` is a lower bound, never the total.
+   */
+  unknownCostExecutions: z.number().int().nonnegative().default(0),
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 

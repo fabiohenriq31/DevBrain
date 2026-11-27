@@ -374,7 +374,12 @@ export class AuthorizationService implements PermissionService {
    * requires an explicit per-session human approval for running the agent.
    */
   async authorizeExecution(
-    input: { sessionId: string; workingDirectory?: string },
+    input: {
+      sessionId: string;
+      workingDirectory?: string;
+      /** False for plain commands, which run local programs and carry no provider cost. */
+      costBearing?: boolean;
+    },
     options: EnforceOptions = {},
   ): Promise<ExecutionAuthorization> {
     const session = this.ctx.db.sessions.findById(input.sessionId);
@@ -405,7 +410,12 @@ export class AuthorizationService implements PermissionService {
       },
       options,
     );
-    this.usage.assertWithinBudget({ agentId: agent.id, policies: [policy, ...overrides] });
+    const budget = this.usage.assertWithinBudget({
+      agentId: agent.id,
+      policies: [policy, ...overrides],
+      costModel: agent.capabilities.costModel,
+      costBearing: input.costBearing ?? true,
+    });
 
     // Most restrictive plan across the agent policy and the project override.
     const plans = [policy, ...overrides].map((p) =>
@@ -491,6 +501,8 @@ export class AuthorizationService implements PermissionService {
         enforcement: plan.level,
         sandboxMode: plan.sandboxMode,
         network: plan.networkAllowed,
+        budgetLimited: budget.limited,
+        costGuaranteed: budget.costGuaranteed,
       },
     });
     return {

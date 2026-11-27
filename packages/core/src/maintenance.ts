@@ -59,6 +59,17 @@ export const recoverPreviousRun = (
         outputTruncated: false,
       };
       ctx.db.executions.saveResultSync(result);
+      // The dead process may have consumed paid resources: account it as unknown cost.
+      const owning = ctx.db.sessions.findById(request.sessionId);
+      if (request.payload.kind === 'prompt' && owning) {
+        ctx.db.usage.record({
+          executionId: request.id,
+          agentId: owning.agentId,
+          providerId: ctx.db.agents.findById(owning.agentId)?.providerId ?? null,
+          projectId: owning.projectId,
+          usage: { inputTokens: null, outputTokens: null, costAmount: null, costCurrency: null },
+        });
+      }
       recoveredExecutions += 1;
     }
     for (const session of ctx.db.sessions.listOrphaned(ctx.instanceId)) {

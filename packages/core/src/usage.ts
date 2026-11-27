@@ -1,5 +1,6 @@
 import {
   DevBrainError,
+  type CostModel,
   UsageSummaryInputSchema,
   parseOrThrow,
   type PermissionPolicy,
@@ -34,9 +35,39 @@ export class UsageService {
     return { period: parsed.period, since, ...totals };
   }
 
-  /** Throws BUDGET_EXCEEDED when a global or policy budget is already spent. */
-  assertWithinBudget(input: { agentId: string; policies: readonly PermissionPolicy[] }): void {
+  /**
+   * Throws BUDGET_EXCEEDED when a global or policy budget is already spent (by REPORTED costs).
+   *
+   * Unknown cost is never zero: when any financial limit applies to a cost-bearing execution
+   * whose integration cannot report cost (anything but `free`/`local`), the limit cannot be
+   * enforced and the execution is refused with BUDGET_UNENFORCEABLE — unless the user
+   * explicitly opted into running without a cost guarantee
+   * (`settings.budget.allowWithoutCostGuarantee`). Returns whether a guarantee exists.
+   */
+  assertWithinBudget(input: {
+    agentId: string;
+    policies: readonly PermissionPolicy[];
+    costModel?: CostModel;
+    costBearing?: boolean;
+  }): { limited: boolean; costGuaranteed: boolean } {
     const { budget } = this.ctx.db.settings.getSync();
+    const limits = [
+      budget.maxPerDay,
+      budget.maxPerMonth,
+      ...input.policies.flatMap((p) =>
+        p.budget ? [p.budget.maxPerDay, p.budget.maxPerExecution] : [],
+      ),
+    ];
+    const limited = limits.some((limit) => limit !== null);
+    const costKnown = input.costModel === 'free' || input.costModel === 'local';
+    const costBearing = input.costBearing ?? true;
+    if (limited && costBearing && !costKnown && !budget.allowWithoutCostGuarantee) {
+      throw new DevBrainError(
+        'BUDGET_UNENFORCEABLE',
+        'A budget limit is configured but this agent cannot report cost, so the limit cannot be enforced',
+        { details: { costModel: input.costModel ?? 'unknown' } },
+      );
+    }
     const check = (
       spent: number | undefined,
       limit: number | null,
@@ -67,5 +98,6 @@ export class UsageService {
         policy.budget.currency,
       );
     }
+    return { limited, costGuaranteed: !limited || costKnown || !costBearing };
   }
 }

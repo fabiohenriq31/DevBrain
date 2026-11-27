@@ -26,6 +26,11 @@ export const ErrorCodeSchema = z.enum([
   'STORAGE_ERROR',
   /** @since 0.2.0 */
   'BUDGET_EXCEEDED',
+  /**
+   * @since 0.4.0 — a financial limit applies but the integration cannot report cost, so the
+   * limit cannot be enforced (unknown cost is never treated as zero).
+   */
+  'BUDGET_UNENFORCEABLE',
   'INTERNAL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;

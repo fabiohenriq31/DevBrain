@@ -253,8 +253,20 @@ export const ApplicationSettingsSchema = z.object({
       currency: z.string().length(3),
       maxPerDay: z.number().nonnegative().nullable(),
       maxPerMonth: z.number().nonnegative().nullable(),
+      /**
+       * @since 0.4.0 — explicit, informed opt-in to run cost-bearing executions whose cost the
+       * integration cannot report while a limit is configured. Limits are then checked only
+       * against REPORTED spending and are not a guarantee. Default `false`: such executions
+       * are blocked with `BUDGET_UNENFORCEABLE`.
+       */
+      allowWithoutCostGuarantee: z.boolean().default(false),
     })
-    .default({ currency: 'USD', maxPerDay: null, maxPerMonth: null }),
+    .default({
+      currency: 'USD',
+      maxPerDay: null,
+      maxPerMonth: null,
+      allowWithoutCostGuarantee: false,
+    }),
   /** DevBrain has no telemetry; kept explicit so it cannot be silently enabled. */
   telemetry: z.literal(false),
 });
@@ -275,7 +287,7 @@ export const DEFAULT_SETTINGS: ApplicationSettings = Object.freeze({
     defaultGrantTtlMs: 8 * 60 * 60 * 1000,
   },
   retention: { ...DEFAULT_RETENTION },
-  budget: { currency: 'USD', maxPerDay: null, maxPerMonth: null },
+  budget: { currency: 'USD', maxPerDay: null, maxPerMonth: null, allowWithoutCostGuarantee: false },
   telemetry: false,
 }) as ApplicationSettings;
 
@@ -290,6 +302,7 @@ export const SettingsPatchSchema = z.object({
       currency: z.string().length(3),
       maxPerDay: z.number().nonnegative().nullable(),
       maxPerMonth: z.number().nonnegative().nullable(),
+      allowWithoutCostGuarantee: z.boolean(),
     })
     .partial()
     .optional(),
