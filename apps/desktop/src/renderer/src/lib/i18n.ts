@@ -23,7 +23,7 @@ const STRINGS = {
     nav: {
       workspace: 'Workspace',
       projects: 'Projetos',
-      agents: 'Agentes e Provedores',
+      agents: 'Central de IA',
       security: 'Segurança e Aprovações',
       settings: 'Configurações',
     },
@@ -48,7 +48,7 @@ const STRINGS = {
     nav: {
       workspace: 'Workspace',
       projects: 'Projects',
-      agents: 'Agents & Providers',
+      agents: 'AI Resource Center',
       security: 'Security & Approvals',
       settings: 'Settings',
     },

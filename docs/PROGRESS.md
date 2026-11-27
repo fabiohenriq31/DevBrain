@@ -113,3 +113,24 @@ preservação dos dados.
 | Antigravity CLI real | ⏸️ | `agy` não instalado; flags conferidas na documentação oficial |
 | Instalador NSIS consolidado (não assinado) | ✅ | SHA-256 `F5DB492DA22E4C36EA4E6153250DFE707FFC8587F2AC9D8B61630151221E2A22` |
 | CI no GitHub, navegação visual manual completa | ⏸️ | Não executados |
+
+## Fase 02
+
+### Antigravity: `phase-02/antigravity-ai-center` (2026-11-27)
+
+Base: `origin/phase-02/contracts` (`4ada206`, descendente da consolidação da Fase 01 `61ae38f`, contratos `0.6.0`).
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Estrutura integrada da Central de IA (11 áreas sem inflar a barra lateral principal; atalhos rápidos na paleta `Ctrl+K`) | ✅ | `views/ai-center/AiResourceCenterView.tsx`, `App.tsx`, `smoke-desktop.mjs` (`uiAiCenterMounted`) |
+| Dashboard executivo de recursos (provedores descobertos/conectados/operacionais, modelos, runtimes locais, cotas Nominal/Disponível/Reservada/Estimada/Consumida/Desconhecida, consumo por moeda sem misturar unidades nem saldo global falso de tokens, créditos a expirar, falhas e fallbacks) | ✅ | `views/ai-center/OverviewSection.tsx`, `lib/ai-center.ts`, `ai-center.test.ts` |
+| Marketplace de provedores pesquisável com 12 filtros, visão detalhada por provedor, zero selos de gratuidade sem evidência e ofertas desconhecidas marcadas como desconhecidas | ✅ | `views/ai-center/MarketplaceWizardSection.tsx`, `ai-center.test.ts` (escala 300+ itens) |
+| Cadastro assistido em 11 etapas + fila retomável de oportunidades gratuitas (DPAPI/`safeStorage` via `credentials.store`, segredos nunca reexibidos nem salvos em `localStorage`, consentimento explícito antes de teste de inferência) | ✅ | `views/ai-center/MarketplaceWizardSection.tsx`, `lib/preferences.ts`, `ai-center.test.ts` |
+| Minhas conexões (ativar/desativar, endpoints autorizados, rotação de credenciais, distinção explícita entre chave autenticada `provider-api` e inferência comprovada `successful-inference`, revogação) | ✅ | `views/ai-center/ConnectionsModelsSection.tsx`, `ai-center.test.ts` |
+| Catálogo de modelos de alta densidade (agrupamento multi-provedor do mesmo modelo preservando diferenças de preço/limites/privacidade por endpoint, comparação lado a lado e atribuição direta a agentes) | ✅ | `views/ai-center/ConnectionsModelsSection.tsx`, `groupModelsAcrossProviders` em `ai-center.test.ts` |
+| Agentes de desenvolvimento (Claude Code, OpenAI Codex, Google Antigravity + **OpenCode** `opencode-cli`; tabela de 6 eixos distinguindo Modelo · Provedor · Agente · Runtime · Conexão · Política) e seletor de modelo integrado ao Workspace | ✅ | `views/AgentsProvidersView.tsx`, `views/WorkspaceView.tsx`, `ai-center.test.ts` |
+| Gerenciador de modelos locais (detecção `ai.local.list`, links oficiais Ollama/LM Studio, viabilidade de RAM/VRAM rotulada estritamente como **estimativa**, download `ai.local.pull` somente com `confirm: true`, progresso `ai.local.pullProgress`, cancelamento e remoção confirmada) | ✅ | `views/ai-center/LocalQuotasCreditsSection.tsx`, `ai-center.test.ts` |
+| Central de cotas e Créditos/Orçamento (`RPM`, `RPD`, `TPM`, `TPD`, semanal, mensal, créditos, unidade do provedor; denominador `null` nunca gera percentual inventado) | ✅ | `views/ai-center/LocalQuotasCreditsSection.tsx`, `computeQuotaBreakdown` em `ai-center.test.ts` |
+| Estratégias de roteamento (6 modos) e Classificação de Privacidade por Projeto (*Público*, *Pessoal privado*, *Comercial confidencial*, *Restrito*) com guardrails não contornáveis e bloqueio no Workspace para projetos *Restrito* | ✅ | `views/ai-center/RoutingBenchmarksDiagnosticsSection.tsx`, `views/ProjectsView.tsx`, `views/WorkspaceView.tsx`, `ai-center.test.ts` |
+| Laboratório de Benchmarks e Diagnóstico/Matriz IPC (zero notas fictícias, sem execução automática em APIs pagas, console controlado de streaming `ai.inference.*` e importação auditada `ai.catalog.import`) | ✅ | `views/ai-center/RoutingBenchmarksDiagnosticsSection.tsx`, `ai-center.test.ts` |
+| Ligação em tempo de execução dos handlers `ai.*` no processo `main` (`apps/desktop/src/main/ipc.ts`) | 🟡 | Em `phase-02/contracts` puro, `dispatchIpc` responde honestamente `UNSUPPORTED` (exibido na Matriz IPC de Diagnóstico); ativa automaticamente na consolidação com `phase-02/codex-ai-gateway` e o bloco Core/Catálogo de Claude |

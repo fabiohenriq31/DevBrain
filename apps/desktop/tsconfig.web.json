@@ -12,6 +12,5 @@
     "noUncheckedSideEffectImports": false,
     "types": []
   },
-  "include": ["src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx"]
 }

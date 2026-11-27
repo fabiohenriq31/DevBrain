@@ -1,8 +1,18 @@
+import type { ProjectPrivacyClass, StrategyPresetId } from './ai-center';
+
 /**
- * Non-secret UI layout preferences stored locally in the renderer profile.
+ * Non-secret UI layout & workflow preferences stored locally in the renderer profile.
  * SECURITY INVARIANT (docs/SECURITY.md): NEVER store credentials, tokens, paths with secrets,
- * or sensitive payloads in localStorage. Only allowlisted layout/onboarding keys are accepted.
+ * or sensitive payloads in localStorage. Only allowlisted keys are accepted and sanitized.
  */
+export interface AssistedSignupQueueItem {
+  providerId: string;
+  providerName: string;
+  currentStep: number;
+  status: 'queued' | 'in-progress' | 'completed';
+  updatedAt: string;
+}
+
 export interface UiPreferences {
   onboardingState: 'pending' | 'skipped' | 'completed';
   sidebarCollapsed: boolean;
@@ -13,9 +23,28 @@ export interface UiPreferences {
   inspectorWidth: number;
   terminalHeight: number;
   activeProjectId: string | null;
+  projectPrivacy: Record<string, ProjectPrivacyClass>;
+  signupQueue: AssistedSignupQueueItem[];
+  selectedStrategyPreset: StrategyPresetId;
 }
 
 const STORAGE_KEY = 'devbrain.ui.preferences.v1';
+
+const VALID_PRIVACY: ReadonlySet<ProjectPrivacyClass> = new Set([
+  'public',
+  'personal-private',
+  'commercial-confidential',
+  'restricted',
+]);
+
+const VALID_STRATEGY: ReadonlySet<StrategyPresetId> = new Set([
+  'free-only',
+  'local-only',
+  'max-savings',
+  'balanced',
+  'max-quality',
+  'custom',
+]);
 
 export const DEFAULT_UI_PREFERENCES: UiPreferences = Object.freeze({
   onboardingState: 'pending',
@@ -27,6 +56,9 @@ export const DEFAULT_UI_PREFERENCES: UiPreferences = Object.freeze({
   inspectorWidth: 300,
   terminalHeight: 320,
   activeProjectId: null,
+  projectPrivacy: {},
+  signupQueue: [],
+  selectedStrategyPreset: 'balanced',
 });
 
 const clampInt = (value: unknown, fallback: number, min: number, max: number): number =>
@@ -34,8 +66,56 @@ const clampInt = (value: unknown, fallback: number, min: number, max: number): n
     ? Math.min(max, Math.max(min, Math.round(value)))
     : fallback;
 
+const sanitizeProjectPrivacy = (raw: unknown): Record<string, ProjectPrivacyClass> => {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, ProjectPrivacyClass> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (
+      k.startsWith('prj_') &&
+      typeof v === 'string' &&
+      VALID_PRIVACY.has(v as ProjectPrivacyClass)
+    ) {
+      out[k] = v as ProjectPrivacyClass;
+    }
+  }
+  return out;
+};
+
+const sanitizeSignupQueue = (raw: unknown): AssistedSignupQueueItem[] => {
+  if (!Array.isArray(raw)) return [];
+  const items: AssistedSignupQueueItem[] = [];
+  for (const item of raw.slice(0, 100)) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    if (
+      typeof rec.providerId !== 'string' ||
+      !/^[a-z0-9][a-z0-9._:-]{1,127}$/.test(rec.providerId)
+    ) {
+      continue;
+    }
+    const providerName =
+      typeof rec.providerName === 'string' ? rec.providerName.slice(0, 120) : rec.providerId;
+    const status =
+      rec.status === 'completed' || rec.status === 'in-progress' ? rec.status : 'queued';
+    items.push({
+      providerId: rec.providerId,
+      providerName,
+      currentStep: clampInt(rec.currentStep, 1, 1, 11),
+      status,
+      updatedAt:
+        typeof rec.updatedAt === 'string' ? rec.updatedAt.slice(0, 40) : new Date().toISOString(),
+    });
+  }
+  return items;
+};
+
 export const parseUiPreferences = (raw: string | null): UiPreferences => {
-  if (!raw) return { ...DEFAULT_UI_PREFERENCES };
+  if (!raw)
+    return {
+      ...DEFAULT_UI_PREFERENCES,
+      projectPrivacy: {},
+      signupQueue: [],
+    };
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const onboarding =
@@ -77,9 +157,20 @@ export const parseUiPreferences = (raw: string | null): UiPreferences => {
         typeof parsed.activeProjectId === 'string' && parsed.activeProjectId.startsWith('prj_')
           ? parsed.activeProjectId
           : null,
+      projectPrivacy: sanitizeProjectPrivacy(parsed.projectPrivacy),
+      signupQueue: sanitizeSignupQueue(parsed.signupQueue),
+      selectedStrategyPreset:
+        typeof parsed.selectedStrategyPreset === 'string' &&
+        VALID_STRATEGY.has(parsed.selectedStrategyPreset as StrategyPresetId)
+          ? (parsed.selectedStrategyPreset as StrategyPresetId)
+          : DEFAULT_UI_PREFERENCES.selectedStrategyPreset,
     };
   } catch {
-    return { ...DEFAULT_UI_PREFERENCES };
+    return {
+      ...DEFAULT_UI_PREFERENCES,
+      projectPrivacy: {},
+      signupQueue: [],
+    };
   }
 };
 
@@ -87,7 +178,11 @@ export const loadUiPreferences = (): UiPreferences => {
   try {
     return parseUiPreferences(window.localStorage.getItem(STORAGE_KEY));
   } catch {
-    return { ...DEFAULT_UI_PREFERENCES };
+    return {
+      ...DEFAULT_UI_PREFERENCES,
+      projectPrivacy: {},
+      signupQueue: [],
+    };
   }
 };
 
@@ -116,6 +211,11 @@ export const saveUiPreferences = (prefs: UiPreferences): void => {
         prefs.activeProjectId && prefs.activeProjectId.startsWith('prj_')
           ? prefs.activeProjectId
           : null,
+      projectPrivacy: sanitizeProjectPrivacy(prefs.projectPrivacy),
+      signupQueue: sanitizeSignupQueue(prefs.signupQueue),
+      selectedStrategyPreset: VALID_STRATEGY.has(prefs.selectedStrategyPreset)
+        ? prefs.selectedStrategyPreset
+        : 'balanced',
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(safe));
   } catch {

@@ -41,6 +41,28 @@ import type {
   SettingsPatch,
 } from './entities/records.js';
 import type { ExecutionHandle, SubmitExecutionInput } from './ipc.js';
+import type {
+  BenchmarkResult,
+  CatalogSnapshot,
+  CreditBalance,
+  FallbackAttempt,
+  InferenceEvent,
+  InferenceRequest,
+  InferenceResult,
+  LocalModel,
+  LocalRuntime,
+  ModelAvailability,
+  ModelDefinition,
+  ModelRoute,
+  ProviderCatalogEntry,
+  ProviderConnection,
+  QuotaDefinition,
+  QuotaObservation,
+  QuotaReservation,
+  RoutingDecision,
+  TaskCheckpoint,
+  UsageRecord,
+} from './entities/ai-resource.js';
 
 /**
  * Service boundaries implemented in the Electron main process (or a utility process).
@@ -182,4 +204,62 @@ export interface GitService {
     baseRef: string;
   }): Promise<GitRepository>;
   removeWorktree(input: { repositoryRoot: string; path: string }): Promise<void>;
+}
+
+/** Phase 02: discovery never enables a connection or consumes a credential. */
+export interface ProviderCatalogService {
+  list(): Promise<ProviderCatalogEntry[]>;
+  importSnapshot(bytes: Uint8Array, sourceId: string): Promise<CatalogSnapshot>;
+}
+
+export interface ProviderConnectionService {
+  list(): Promise<ProviderConnection[]>;
+  save(connection: ProviderConnection): Promise<ProviderConnection>;
+  remove(id: string): Promise<void>;
+  validateCredential(id: string, signal?: AbortSignal): Promise<ModelAvailability>;
+}
+
+export interface ModelDiscoveryService {
+  list(connectionId?: string): Promise<ModelDefinition[]>;
+  availability(modelId: string, connectionId: string): Promise<ModelAvailability>;
+}
+
+export interface InferenceGatewayService {
+  infer(request: InferenceRequest, signal?: AbortSignal): Promise<InferenceResult>;
+  stream(request: InferenceRequest, signal?: AbortSignal): AsyncIterable<InferenceEvent>;
+  cancel(requestId: string): Promise<void>;
+  attempts(requestId: string): Promise<FallbackAttempt[]>;
+}
+
+/** Atomic admission and reservation are implementation obligations. */
+export interface QuotaLedgerService {
+  listDefinitions(scopeId?: string): Promise<QuotaDefinition[]>;
+  observations(quotaId: string): Promise<QuotaObservation[]>;
+  reserve(quotaId: string, requestId: string, amount: number): Promise<QuotaReservation>;
+  reconcile(reservationId: string, measured: number | null): Promise<QuotaReservation>;
+  release(reservationId: string): Promise<QuotaReservation>;
+  usage(requestId: string): Promise<UsageRecord[]>;
+  creditBalance(accountId: string): Promise<CreditBalance | null>;
+}
+
+/** Policy evaluation may be replaced by Claude's advanced routing service. */
+export interface ModelSelectionService {
+  select(request: InferenceRequest, routes: ModelRoute[]): Promise<RoutingDecision>;
+}
+
+export interface LocalRuntimeService {
+  list(): Promise<LocalRuntime[]>;
+  listModels(runtimeId: string): Promise<LocalModel[]>;
+  pull(
+    runtimeId: string,
+    modelId: string,
+    signal?: AbortSignal,
+  ): AsyncIterable<{ completed: number; total: number | null }>;
+  remove(runtimeId: string, modelId: string): Promise<void>;
+  benchmark(runtimeId: string, modelId: string, signal?: AbortSignal): Promise<BenchmarkResult>;
+}
+
+export interface TaskContextService {
+  save(checkpoint: TaskCheckpoint): Promise<void>;
+  latest(sessionId: string): Promise<TaskCheckpoint | null>;
 }

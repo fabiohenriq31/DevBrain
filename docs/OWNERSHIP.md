@@ -8,6 +8,13 @@ Legenda: **C** = Claude · **X** = Codex · **A** = Antigravity · **P** = Propr
 
 ## Pacotes e app
 
+Na Fase 02, Codex possui os transportes HTTP, adaptadores, gateway, catálogo,
+descoberta, ledger técnico de cotas, streaming, fallback, OpenCode, runtime local e
+respectivos handlers IPC. Claude possui as políticas avançadas de roteamento, finanças,
+privacidade, classificação, benchmarks, contexto e revisão de segurança. Antigravity
+possui o renderer. `phase-02/contracts` é a base compartilhada inicial solicitada pelo
+proprietário, com revisão dos consumidores.
+
 | Caminho | Dono | Revisão obrigatória |
 | --- | --- | --- |
 | `packages/contracts/**` | C | X e A, quando o contrato afeta o pacote deles |
