@@ -115,7 +115,7 @@ const locate = async (name: string): Promise<string | null> => {
   return null;
 };
 
-type CliKind = 'codex' | 'claude' | 'antigravity';
+type CliKind = 'codex' | 'claude' | 'antigravity' | 'opencode';
 /**
  * Presence probe. `agy` documents `--help` but not `--version`; for it the version stays
  * unknown (null) and a successful `--help` proves the executable runs.
@@ -124,6 +124,7 @@ const PROBE_ARGS: Record<CliKind, string[]> = {
   codex: ['--version'],
   claude: ['--version'],
   antigravity: ['--help'],
+  opencode: ['--version'],
 };
 const specs = {
   codex: {
@@ -186,6 +187,26 @@ const specs = {
       enforcement: 'none' as const,
     },
   },
+  opencode: {
+    key: 'opencode-cli',
+    name: 'OpenCode',
+    executable: 'opencode',
+    url: 'https://opencode.ai/docs/cli/commands/',
+    capabilities: {
+      streaming: true,
+      interrupt: true,
+      resumeSession: false,
+      toolUse: true,
+      fileEdits: true,
+      shellCommands: true,
+      mcp: true,
+      structuredOutput: true,
+      maxConcurrentSessions: null,
+      contextWindowTokens: null,
+      costModel: 'unknown' as const,
+      enforcement: 'none' as const,
+    },
+  },
 } satisfies Record<
   CliKind,
   { key: string; name: string; executable: string; url: string; capabilities: AgentCapabilities }
@@ -201,7 +222,14 @@ class CliAdapter implements ProviderAdapter {
       adapterKey: spec.key,
       kind: 'cli-agent',
       displayName: spec.name,
-      vendor: kind === 'codex' ? 'OpenAI' : kind === 'claude' ? 'Anthropic' : 'Google',
+      vendor:
+        kind === 'codex'
+          ? 'OpenAI'
+          : kind === 'claude'
+            ? 'Anthropic'
+            : kind === 'opencode'
+              ? 'Anomaly'
+              : 'Google',
       documentationUrl: spec.url,
       capabilities: spec.capabilities,
     };
@@ -280,7 +308,7 @@ class CliAdapter implements ProviderAdapter {
 
 export const createBuiltinRegistry = (): ProviderRegistry => {
   const registry = new ProviderRegistry();
-  for (const kind of ['codex', 'claude', 'antigravity'] as const)
+  for (const kind of ['codex', 'claude', 'antigravity', 'opencode'] as const)
     registry.register(new CliAdapter(kind));
   return registry;
 };

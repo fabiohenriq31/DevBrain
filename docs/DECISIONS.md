@@ -310,3 +310,25 @@ consentir de forma informada. Nenhum orçamento é apresentado como garantido se
   não sobreviva parcialmente.
 - `ProviderAdapter.execute` dos adaptadores CLI continua `UNSUPPORTED` e está documentado:
   o único caminho de execução é `OperationalExecutionService`.
+
+## ADR-0022 — Gateway interno e admissões conservadoras (Fase 02)
+
+**Contexto.** A fundação da Fase 01 tem Core, cofre e SQLite locais. Provedores
+externos apresentam cotas incompletas, respostas heterogêneas e falhas parciais.
+
+**Decisão.** O gateway é um pacote TypeScript invocado internamente pelo main do
+Electron. Uma conexão de API é distinta de um agente CLI. O transporte usa HTTPS
+para destinos remotos, DNS fixado para a requisição, bloqueio de endereços privados
+e redirecionamentos. Endpoints de loopback exigem indicação explícita. Credenciais
+são resolvidas pelo cofre existente e nunca entram no renderer. Catálogos importados
+não ativam conexões. O ledger faz admissão transacional no SQLite; consumo sem
+medição depois de envio é marcado incerto e conserva a reserva. A seleção
+determinística ocupa um único ponto substituível pelas políticas do Claude. Em modo
+gratuito, rotas pagas ou de custo desconhecido são excluídas. Após saída parcial,
+não há fallback silencioso.
+
+**Limites.** A reserva por tokens não é garantia de custo financeiro. Não se promete
+cota gratuita, preço zero, compatibilidade de modelo ou autenticação por descoberta
+de catálogo. O servidor HTTP local autenticado é opcional e não inicia por padrão;
+seu vínculo com OpenCode, validações externas e políticas avançadas ainda exigem
+implementação e evidência próprias.

@@ -188,6 +188,9 @@ describe('agent command lines', () => {
     const agy = buildAgentCommand('google-antigravity-cli', hostile, options);
     expect(agy.args.at(-1)).toBe(`--print=${hostile}`);
     expect(agy.args.filter((a) => a.startsWith('--dangerously'))).toEqual([]);
+    const opencode = buildAgentCommand('opencode-cli', hostile, options);
+    expect(opencode.args.at(-1)).toBe(`User request:\n${hostile}`);
+    expect(opencode.args.some((a) => a.startsWith('--dangerously'))).toBe(false);
   });
 
   it('maps the authorized sandbox mode and never uses auto-approve modes', () => {
@@ -211,6 +214,11 @@ describe('agent command lines', () => {
       ]),
     );
     expect(agy).not.toContain('auto');
+    const opencode = buildAgentCommand('opencode-cli', 'x', { ...options, readOnly: true }).args;
+    expect(opencode).toEqual(
+      expect.arrayContaining(['--standalone', '--format', 'json', '--agent', 'plan']),
+    );
+    expect(opencode).not.toContain('--auto');
     expect(() => buildAgentCommand('unknown-cli', 'x', options)).toThrow(/does not support/);
   });
 });
