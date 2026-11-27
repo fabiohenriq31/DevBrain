@@ -1,30 +1,17 @@
 import { join } from 'node:path';
 import { BrowserWindow, app } from 'electron';
-import { createDatabase, type DevBrainDatabase } from '@devbrain/database';
+import { startCore, type StartedCore } from './core.js';
 import { registerIpc } from './ipc.js';
 import { applyProcessHardening, hardenSession, hardenWebContents } from './security.js';
 
 const devServerUrl = !app.isPackaged ? process.env['ELECTRON_RENDERER_URL'] : undefined;
-let db: DevBrainDatabase | null = null;
+let started: StartedCore | null = null;
 
 applyProcessHardening();
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 }
-
-const openDatabase = (): DevBrainDatabase | null => {
-  try {
-    // userData lives outside the repository (%APPDATA%\DevBrain AI on Windows).
-    return createDatabase({ location: join(app.getPath('userData'), 'devbrain.db') });
-  } catch (error) {
-    console.error(
-      '[devbrain] failed to open database:',
-      error instanceof Error ? error.message : 'unknown',
-    );
-    return null;
-  }
-};
 
 const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
@@ -71,8 +58,8 @@ app.on('second-instance', () => {
 void app.whenReady().then(() => {
   app.setAppUserModelId('ai.devbrain.desktop');
   hardenSession();
-  db = openDatabase();
-  registerIpc({ db, devServerUrl });
+  started = startCore();
+  registerIpc({ core: started.core, devServerUrl });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -84,6 +71,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
-  db?.close();
-  db = null;
+  // Clean shutdown: marks this run as finished so the next start does not report a crash.
+  started?.core?.close();
+  started = null;
 });
