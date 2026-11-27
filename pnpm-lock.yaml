@@ -44,9 +44,18 @@ importers:
       '@devbrain/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@devbrain/execution-engine':
+        specifier: workspace:*
+        version: link:../../packages/execution-engine
+      '@devbrain/git-engine':
+        specifier: workspace:*
+        version: link:../../packages/git-engine
       '@devbrain/project-engine':
         specifier: workspace:*
         version: link:../../packages/project-engine
+      '@devbrain/provider-sdk':
+        specifier: workspace:*
+        version: link:../../packages/provider-sdk
       '@devbrain/security':
         specifier: workspace:*
         version: link:../../packages/security

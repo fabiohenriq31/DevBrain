@@ -133,8 +133,8 @@ const checks = JSON.parse(
   r.invalidRejected = !bad.ok && bad.error.code === 'VALIDATION_FAILED';
   const unknown = await window.devbrain.invoke('fs.readAnything', {});
   r.unknownRejected = !unknown.ok && unknown.error.code === 'PERMISSION_DENIED';
-  const unimpl = await window.devbrain.invoke('providers.listAdapters', {});
-  r.unimplementedHonest = !unimpl.ok && unimpl.error.code === 'UNSUPPORTED';
+  const adapters = await window.devbrain.invoke('providers.listAdapters', {});
+  r.adaptersKnown = adapters.ok && adapters.data.some((item) => item.adapterKey === 'openai-codex-cli');
   const settings = await window.devbrain.invoke('settings.get', {});
   r.settingsOk = settings.ok && settings.data.telemetry === false;
 
@@ -216,7 +216,7 @@ const expected = {
   listCount: 1,
   invalidRejected: true,
   unknownRejected: true,
-  unimplementedHonest: true,
+  adaptersKnown: true,
   settingsOk: true,
   health: 'ok:v2',
   providerReadiness: 'configured',

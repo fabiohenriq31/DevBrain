@@ -9,10 +9,12 @@ import {
   type IpcHandlerMap,
 } from '@devbrain/contracts';
 import type { CoreServices } from '@devbrain/core';
+import type { OperationalExecutionService } from '@devbrain/execution-engine';
 import { isTrustedRendererUrl } from './security.js';
 
 export interface MainServices {
   core: CoreServices | null;
+  engine?: OperationalExecutionService | null;
   devServerUrl: string | undefined;
 }
 
@@ -27,7 +29,7 @@ const focusedWindow = () => BrowserWindow.getFocusedWindow() ?? BrowserWindow.ge
  * executions — have no handler yet and answer `UNSUPPORTED` (honestly reported, never
  * simulated) until their owner implements them.
  */
-export const createHandlers = ({ core }: MainServices): IpcHandlerMap => {
+export const createHandlers = ({ core, engine }: MainServices): IpcHandlerMap => {
   const c = (): CoreServices => {
     if (!core)
       throw new DevBrainError(
@@ -35,6 +37,10 @@ export const createHandlers = ({ core }: MainServices): IpcHandlerMap => {
         'DevBrain Core is not available (database failed to open)',
       );
     return core;
+  };
+  const e = (): OperationalExecutionService => {
+    if (!engine) throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Execution engine unavailable');
+    return engine;
   };
 
   return {
@@ -93,6 +99,9 @@ export const createHandlers = ({ core }: MainServices): IpcHandlerMap => {
     'workspaces.updateAccess': (input) => c().projects.updateWorkspaceAccess(input),
 
     // ---- providers & agents -------------------------------------------------
+    'providers.listAdapters': () => e().listAdapters(),
+    'providers.checkDependencies': (input) => e().checkDependencies(input.adapterKey),
+    'providers.getCapabilities': (input) => e().getCapabilities(input.adapterKey),
     'providers.listConfigured': () => c().providers.list(),
     'providers.get': (input) => c().providers.get(input.id),
     'providers.register': (input) => c().providers.register(defined(input)),
@@ -124,6 +133,8 @@ export const createHandlers = ({ core }: MainServices): IpcHandlerMap => {
     'checkpoints.get': (input) => c().sessions.getCheckpoint(input.id),
     'executions.listEvents': (input) => c().db.executions.listEvents(input),
     'executions.getResult': (input) => c().db.executions.getResult(input.executionId),
+    'executions.submit': (input) => e().submit(input),
+    'executions.interrupt': (input) => e().interrupt(input),
 
     // ---- permissions & approvals ------------------------------------------------
     'approvals.listPending': () => c().approvals.listPending(),
