@@ -1,6 +1,10 @@
 # resources/
 
-Recursos de empacotamento do app desktop (ícones `.ico`/`.png`, imagens de instalador).
-Dono: Antigravity (ver `docs/OWNERSHIP.md`). Todo arquivo aqui precisa ser de autoria
-própria ou ter licença compatível registrada em `THIRD_PARTY_NOTICES.md`. Vazio até a
-Fase 01 (entrega A8).
+Recursos de empacotamento do app desktop (entrega A8 — Fase 01).
+Dono: Antigravity (ver `docs/OWNERSHIP.md`).
+
+## Arquivos
+
+- `icon.svg`: emblema vetorial original do DevBrain AI (autoria própria do projeto, sob a mesma licença do repositório).
+- `icon.png`: rasterização 256×256 derivada de `icon.svg` para janela/empacotamento.
+- `icon.ico`: ícone Windows multirresolução (16×16, 32×32, 48×48 e 256×256) utilizado pelo Electron Builder / NSIS.

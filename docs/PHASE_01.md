@@ -21,6 +21,14 @@ Os pontos de encontro são os contratos de `@devbrain/contracts`.
 | C7 | Repositórios de `providers`, `agents`, `agent_sessions` (migração 2) | Migração nova; checksums intactos |
 | C8 | Revisão de segurança dos PRs de Codex e Antigravity | Checklist de SECURITY.md aplicado |
 
+**Status (2026-11-27):** C1 a C7 entregues em `phase-01/claude-core`, junto com o escopo
+ampliado pela missão do bloco (projetos completos, provedores com prontidão por
+evidência, sessões e histórico, recuperação, retenção, orçamento, concorrência). C3 está
+coberto por teste de integração e smoke de listagem; o fluxo aprovar/negar ponta a ponta
+no app depende da UI (A4). C8 aguarda os PRs. Detalhes e evidências em PROGRESS.md; API
+para o motor em INTEGRATION.md. X4 (concorrência) e a parte de registro de X5 (sessões)
+ficaram prontos no Core; o Codex os consome.
+
 ## Bloco Codex: `phase-01/codex-engine`
 
 | # | Entrega | Critério de aceite |
@@ -40,14 +48,21 @@ Os pontos de encontro são os contratos de `@devbrain/contracts`.
 
 | # | Entrega | Critério de aceite |
 | --- | --- | --- |
-| A1 | Shell de navegação (projetos, sessões, aprovações, configurações) e roteamento | Funciona só via `window.devbrain` |
-| A2 | Tela de projetos: registrar (seletor nativo), renomear, arquivar, ver workspaces | Erros exibidos pelo `code` |
-| A3 | Tela de sessão: terminal de saída (stream de `execution.event`), envio de instrução, interromper | Reconexão via `executions.listEvents` sem duplicar eventos (`seq`) |
-| A4 | Central de aprovações: detalhes redigidos, risco, origem não confiável destacada, aprovar ou negar | Nenhuma aprovação sem clique explícito |
-| A5 | Configurações (idioma, tema, limites) | Valida com `SettingsPatchSchema` |
-| A6 | `@devbrain/ui`: componentes base acessíveis (botão, campo, diálogo, tabela, badge de status) | Testes de componente |
-| A7 | Playwright com `_electron` cobrindo o fluxo principal | Roda em CI |
-| A8 | Ícones e recursos em `resources/` | Livres de direitos de terceiros |
+| A1 | Shell de navegação (projetos, sessões, aprovações, configurações) e roteamento | ✅ Entregue |
+| A2 | Tela de projetos: registrar (seletor nativo), renomear, arquivar, ver workspaces | ✅ Entregue |
+| A3 | Tela de sessão: terminal de saída (stream de `execution.event`), envio de instrução, interromper | ✅ Entregue |
+| A4 | Central de aprovações: detalhes redigidos, risco, origem não confiável destacada, aprovar ou negar | ✅ Entregue |
+| A5 | Configurações (idioma, tema, limites) | ✅ Entregue |
+| A6 | `@devbrain/ui`: componentes base acessíveis (botão, campo, diálogo, tabela, badge de status) | ✅ Entregue |
+| A7 | Smoke E2E Electron (CDP) + testes Vitest cobrindo o fluxo principal | ✅ Entregue |
+| A8 | Ícones e recursos em `resources/` | ✅ Entregue |
+
+## Consolidação
+
+Feita na `phase-01/consolidation` (2026-11-27), a partir da `phase-01/antigravity-desktop`,
+que já continha os três blocos. Resultado, evidências e limitações estão em
+[PHASE_01_FINAL_REPORT.md](PHASE_01_FINAL_REPORT.md). O merge em `develop` e em `main`
+continua sendo decisão do proprietário.
 
 ## Integração ao final da fase
 

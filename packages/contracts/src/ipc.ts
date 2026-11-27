@@ -1,4 +1,13 @@
 import { z } from 'zod';
+import * as C from './entities/core.js';
+import { AgentSchema } from './entities/agent.js';
+import {
+  CheckpointSchema,
+  CredentialReferenceSchema,
+  GitStatusSchema,
+} from './entities/records.js';
+import { PermissionPolicySchema } from './entities/permissions.js';
+import { WorkspaceSchema } from './entities/project.js';
 import {
   AuditEventSchema,
   ApplicationSettingsSchema,
@@ -36,7 +45,10 @@ import {
   AbsolutePathSchema,
   ExecutionIdSchema,
   ProjectIdSchema,
+  ProviderIdSchema,
   SessionIdSchema,
+  TimestampSchema,
+  WorkspaceIdSchema,
 } from './common.js';
 import {
   DevBrainError,
@@ -100,6 +112,37 @@ export const ExecutionHandleSchema = z.object({
   status: ExecutionStatusSchema,
 });
 export type ExecutionHandle = z.infer<typeof ExecutionHandleSchema>;
+
+/**
+ * @since 0.3.0 — Git inspection of a registered workspace. The renderer passes a workspace id,
+ * never a path: main resolves the root from the Core and only reads (status / diff).
+ */
+export const GitWorkspaceInputSchema = z.object({ workspaceId: WorkspaceIdSchema });
+export type GitWorkspaceInput = z.input<typeof GitWorkspaceInputSchema>;
+
+export const GitDiffInputSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+  /** Upper bound of diff text returned; larger diffs are cut and flagged `truncated`. */
+  maxBytes: z
+    .number()
+    .int()
+    .min(1024)
+    .max(8 * 1024 * 1024)
+    .default(2 * 1024 * 1024),
+});
+export type GitDiffInput = z.input<typeof GitDiffInputSchema>;
+
+export const GitDiffSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+  /**
+   * Unified diff of unstaged changes to tracked files (`git diff`), redacted in main.
+   * Untracked files are not included; they are listed by `git.status`. UNTRUSTED text.
+   */
+  diff: z.string(),
+  truncated: z.boolean(),
+  capturedAt: TimestampSchema,
+});
+export type GitDiff = z.infer<typeof GitDiffSchema>;
 
 export const IPC_CHANNELS = {
   'system.getInfo': channel(Empty, SystemInfoSchema, 'Application and runtime information.'),
@@ -187,6 +230,166 @@ export const IPC_CHANNELS = {
     z.array(AuditEventSchema),
     'Read the audit log (read-only; it cannot be disabled from the renderer).',
   ),
+
+  // ---- 0.2.0: core block ---------------------------------------------------
+  'projects.create': channel(
+    C.CreateProjectInputSchema,
+    ProjectSchema,
+    'Create a new folder and register it.',
+  ),
+  'projects.remove': channel(
+    C.RemoveProjectInputSchema,
+    z.object({ removed: z.literal(true) }),
+    'Remove the registration and its history. Files on disk are NOT deleted.',
+  ),
+  'projects.restore': channel(ProjectRefInputSchema, ProjectSchema, 'Un-archive a project.'),
+  'projects.listRecent': channel(
+    C.RecentProjectsInputSchema,
+    z.array(ProjectSchema),
+    'Recently opened.',
+  ),
+  'projects.markOpened': channel(
+    ProjectRefInputSchema,
+    ProjectSchema,
+    'Record that a project was opened.',
+  ),
+  'projects.detectTechnologies': channel(
+    ProjectRefInputSchema,
+    ProjectSchema,
+    'Re-scan manifest files.',
+  ),
+  'projects.getSettings': channel(
+    ProjectRefInputSchema,
+    C.ProjectSettingsSchema,
+    'Per-project settings.',
+  ),
+  'projects.updateSettings': channel(
+    C.ProjectSettingsPatchSchema,
+    C.ProjectSettingsSchema,
+    'Patch.',
+  ),
+  'projects.export': channel(
+    ProjectRefInputSchema,
+    C.BackupResultSchema.nullable(),
+    'Export project data (JSON, no secrets) via save dialog.',
+  ),
+  'workspaces.list': channel(
+    z.object({ projectId: ProjectIdSchema }),
+    z.array(WorkspaceSchema),
+    'Workspaces.',
+  ),
+  'workspaces.updateAccess': channel(
+    C.UpdateWorkspaceAccessInputSchema,
+    WorkspaceSchema,
+    'Authorized directories.',
+  ),
+
+  'providers.listConfigured': channel(
+    Empty,
+    z.array(C.ProviderProfileSchema),
+    'Configured providers with evidence-based readiness.',
+  ),
+  'providers.get': channel(
+    z.object({ id: ProviderIdSchema }),
+    C.ProviderProfileSchema,
+    'One provider.',
+  ),
+  'providers.register': channel(
+    C.RegisterProviderInputSchema,
+    C.ProviderProfileSchema,
+    'Add provider configuration.',
+  ),
+  'providers.update': channel(
+    C.UpdateProviderInputSchema,
+    C.ProviderProfileSchema,
+    'Edit configuration.',
+  ),
+  'providers.setEnabled': channel(
+    C.SetProviderEnabledInputSchema,
+    C.ProviderProfileSchema,
+    'Enable / disable.',
+  ),
+  'providers.remove': channel(
+    z.object({ id: ProviderIdSchema }),
+    z.object({ removed: z.literal(true) }),
+    'Remove (fails if agents use it).',
+  ),
+
+  'agents.list': channel(Empty, z.array(AgentSchema), 'Known agents.'),
+  'agents.register': channel(C.RegisterAgentInputSchema, AgentSchema, 'Add an agent.'),
+  'agents.update': channel(C.UpdateAgentInputSchema, AgentSchema, 'Edit an agent.'),
+
+  'credentials.list': channel(
+    Empty,
+    z.array(CredentialReferenceSchema),
+    'References only — never values.',
+  ),
+  'credentials.store': channel(
+    C.StoreCredentialInputSchema,
+    CredentialReferenceSchema,
+    'Store a secret (encrypted by the OS).',
+  ),
+  'credentials.remove': channel(
+    C.CredentialRefInputSchema,
+    z.object({ removed: z.literal(true) }),
+    'Delete a secret.',
+  ),
+
+  'sessions.get': channel(SessionRefInputSchema, AgentSessionSchema, 'One session.'),
+  'sessions.list': channel(
+    C.ListSessionsInputSchema,
+    z.array(AgentSessionSchema),
+    'Sessions, filterable by status.',
+  ),
+  'sessions.history': channel(
+    SessionRefInputSchema,
+    C.SessionHistorySchema,
+    'Instructions, results, files, checkpoints.',
+  ),
+  'checkpoints.get': channel(C.CheckpointRefInputSchema, CheckpointSchema, 'One checkpoint.'),
+
+  'permissions.listPolicies': channel(Empty, z.array(PermissionPolicySchema), 'Policies.'),
+  'permissions.savePolicy': channel(
+    PermissionPolicySchema,
+    PermissionPolicySchema,
+    'Create/replace a policy (version bumps).',
+  ),
+  'permissions.listGrants': channel(
+    C.ListGrantsInputSchema,
+    z.array(C.PermissionGrantSchema),
+    'Active (or all) grants.',
+  ),
+  'permissions.revokeGrant': channel(
+    C.RevokeGrantInputSchema,
+    C.PermissionGrantSchema,
+    'Revoke a grant.',
+  ),
+  'permissions.evaluate': channel(
+    C.EvaluatePermissionInputSchema,
+    C.PermissionVerdictSchema,
+    'Dry-run a permission check.',
+  ),
+
+  'usage.summary': channel(C.UsageSummaryInputSchema, C.UsageSummarySchema, 'Consumption.'),
+
+  'system.storageHealth': channel(
+    Empty,
+    C.StorageHealthSchema,
+    'Database integrity and recovery report.',
+  ),
+  'system.backup': channel(Empty, C.BackupResultSchema, 'Create a local database backup now.'),
+
+  // ---- 0.3.0: read-only Git inspection of workspaces -------------------------
+  'git.status': channel(
+    GitWorkspaceInputSchema,
+    GitStatusSchema.nullable(),
+    'Git status of a workspace (null when it is not a repository).',
+  ),
+  'git.diff': channel(
+    GitDiffInputSchema,
+    GitDiffSchema,
+    'Unified diff of unstaged tracked changes in a workspace (redacted, size-capped).',
+  ),
 } as const satisfies Record<string, ChannelDefinition>;
 
 export type IpcChannelKey = keyof typeof IPC_CHANNELS;
@@ -199,6 +402,12 @@ export const IPC_EVENTS = {
   'execution.event': ExecutionEventSchema,
   'approval.requested': ApprovalRequestSchema,
   'projects.changed': z.object({ projectId: ProjectIdSchema }),
+  /** @since 0.2.0 */
+  'approval.decided': ApprovalRequestSchema,
+  /** @since 0.2.0 */
+  'sessions.changed': AgentSessionSchema,
+  /** @since 0.2.0 */
+  'providers.changed': z.object({ providerId: ProviderIdSchema }),
 } as const satisfies Record<string, z.ZodType>;
 
 export type IpcEventKey = keyof typeof IPC_EVENTS;

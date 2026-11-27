@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@devbrain/contracts": "workspace:*",
-    "@devbrain/security": "workspace:*"
+    "@devbrain/security": "workspace:*",
+    "zod": "4.6.7"
   }
 }

@@ -11,6 +11,7 @@ export default defineConfig({
       '@devbrain/security': pkg('security'),
       '@devbrain/database': pkg('database'),
       '@devbrain/project-engine': pkg('project-engine'),
+      '@devbrain/core': pkg('core'),
       '@devbrain/provider-sdk': pkg('provider-sdk'),
       '@devbrain/execution-engine': pkg('execution-engine'),
       '@devbrain/git-engine': pkg('git-engine'),

@@ -5,3 +5,6 @@ export * from './commands.js';
 export * from './credentials.js';
 export * from './untrusted.js';
 export * from './limits.js';
+export * from './workspace-access.js';
+export * from './enforcement.js';
+export * from './logger.js';

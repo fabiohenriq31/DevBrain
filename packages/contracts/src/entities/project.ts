@@ -8,6 +8,28 @@ import {
   WorkspaceIdSchema,
 } from '../common.js';
 
+export const TechnologyCategorySchema = z.enum([
+  'language',
+  'framework',
+  'runtime',
+  'package-manager',
+  'build',
+  'test',
+  'container',
+  'tooling',
+]);
+export type TechnologyCategory = z.infer<typeof TechnologyCategorySchema>;
+
+/** Technology detected from manifest files (shallow scan; deep analysis is Phase 02). */
+export const TechnologySchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9.+-]{0,63}$/),
+  name: z.string().min(1).max(100),
+  category: TechnologyCategorySchema,
+  /** Workspace-relative file that justified the detection. */
+  evidence: z.string().max(1024),
+});
+export type Technology = z.infer<typeof TechnologySchema>;
+
 export const ProjectSchema = z.object({
   id: ProjectIdSchema,
   name: NonEmptyStringSchema.max(200),
@@ -19,6 +41,10 @@ export const ProjectSchema = z.object({
   updatedAt: TimestampSchema,
   archivedAt: TimestampSchema.nullable(),
   metadata: MetadataSchema,
+  /** @since 0.2.0 */
+  technologies: z.array(TechnologySchema).default([]),
+  /** @since 0.2.0 — drives "recent projects". */
+  lastOpenedAt: TimestampSchema.nullable().default(null),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
