@@ -1,5 +1,13 @@
 import type { AgentSession, StartSessionInput } from './entities/agent.js';
 import type {
+  CreateProjectInput,
+  EvaluatePermissionInput,
+  ProjectSettings,
+  ProjectSettingsPatch,
+  RemoveProjectInput,
+  UpdateWorkspaceAccessInput,
+} from './entities/core.js';
+import type {
   ExecutionEvent,
   ExecutionRequest,
   ExecutionResult,
@@ -9,7 +17,6 @@ import type {
 import type {
   ApprovalDecisionInput,
   ApprovalRequest,
-  PermissionAction,
   PermissionDecision,
 } from './entities/permissions.js';
 import type {
@@ -49,6 +56,24 @@ export interface ProjectService {
   update(input: UpdateProjectInput): Promise<Project>;
   archive(id: string): Promise<Project>;
   listWorkspaces(projectId: string): Promise<Workspace[]>;
+  /** @since 0.2.0 */
+  create(input: CreateProjectInput): Promise<Project>;
+  /** @since 0.2.0 */
+  restore(id: string): Promise<Project>;
+  /** @since 0.2.0 — removes the registration only; files are never deleted. */
+  remove(input: RemoveProjectInput): Promise<void>;
+  /** @since 0.2.0 */
+  listRecent(limit?: number): Promise<Project[]>;
+  /** @since 0.2.0 */
+  markOpened(id: string): Promise<Project>;
+  /** @since 0.2.0 */
+  refreshTechnologies(id: string): Promise<Project>;
+  /** @since 0.2.0 */
+  getSettings(projectId: string): Promise<ProjectSettings>;
+  /** @since 0.2.0 */
+  updateSettings(patch: ProjectSettingsPatch): Promise<ProjectSettings>;
+  /** @since 0.2.0 */
+  updateWorkspaceAccess(input: UpdateWorkspaceAccessInput): Promise<Workspace>;
 }
 
 /** Owner: Codex (`@devbrain/provider-sdk`, `@devbrain/execution-engine`). */
@@ -58,7 +83,10 @@ export interface AgentDiscoveryService {
   getCapabilities(adapterKey: string): Promise<AgentCapabilities>;
 }
 
-/** Owner: Codex (`@devbrain/execution-engine`). */
+/**
+ * Session records and lifecycle: implemented by Claude (`@devbrain/core` SessionManager, 0.2.0).
+ * The execution engine (Codex) runs processes on top of it and reports history to it.
+ */
 export interface SessionService {
   start(input: StartSessionInput): Promise<AgentSession>;
   stop(sessionId: string): Promise<AgentSession>;
@@ -86,34 +114,36 @@ export interface ExecutionHistoryStore {
   getResult(executionId: string): Promise<ExecutionResult | null>;
 }
 
-export interface PermissionCheck {
-  agentId: string;
-  action: PermissionAction;
-  /** Absolute target path, when the action touches the filesystem. */
-  path?: string;
-  /** Executable name for `process.spawn`. */
-  executable?: string;
-  /** True if triggered by content from files/tools/agent output. */
-  untrustedOrigin?: boolean;
-}
-
 export interface PermissionVerdict {
   decision: PermissionDecision;
   reason: string;
+  /** Grant that lifted an `ask` to `allow`, if any. @since 0.2.0 */
+  grantId?: string | null;
 }
 
-/** Owner: Claude (`@devbrain/security`). */
+/**
+ * Owner: Claude (`@devbrain/core` AuthorizationService).
+ * @since 0.2.0 — replaces the 0.1.0 `check(PermissionCheck)` (INCOMPATIBLE, see
+ * docs/INTEGRATION.md): evaluation now requires the workspace so paths are checked against
+ * real (link-resolved) authorized directories.
+ */
 export interface PermissionService {
-  check(input: PermissionCheck): Promise<PermissionVerdict>;
+  /** Dry run. */
+  evaluate(input: EvaluatePermissionInput): Promise<PermissionVerdict>;
+  /** Evaluate and apply: allow → resolves; deny → throws; ask → approval + wait. */
+  enforce(
+    input: EvaluatePermissionInput,
+    options?: { waitForApproval?: boolean; signal?: AbortSignal; executionId?: string },
+  ): Promise<PermissionVerdict>;
 }
 
 /** Owner: Claude (`@devbrain/security` + `@devbrain/database`); UI by Antigravity. */
 export interface ApprovalService {
   request(
-    input: Omit<
-      ApprovalRequest,
-      'id' | 'status' | 'requestedAt' | 'expiresAt' | 'decidedAt' | 'decidedBy' | 'decisionNote'
-    >,
+    input: Pick<ApprovalRequest, 'agentId' | 'action' | 'risk' | 'summary' | 'untrustedOrigin'> &
+      Partial<
+        Pick<ApprovalRequest, 'sessionId' | 'executionId' | 'details' | 'projectId' | 'target'>
+      >,
   ): Promise<ApprovalRequest>;
   listPending(): Promise<ApprovalRequest[]>;
   /** Must only be reachable from a user action in the renderer — never from an agent. */

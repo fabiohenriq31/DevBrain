@@ -5,6 +5,7 @@ import {
   CheckpointIdSchema,
   CredentialIdSchema,
   NonEmptyStringSchema,
+  patchOf,
   ProjectIdSchema,
   ProviderIdSchema,
   SessionIdSchema,
@@ -178,6 +179,41 @@ export type AuditEventInput = Omit<AuditEvent, 'id' | 'timestamp'>;
 
 export const SETTINGS_SCHEMA_VERSION = 1 as const;
 
+export const RetentionSettingsSchema = z.object({
+  /** Execution events older than this (of finished executions) are pruned. */
+  executionEventsMaxAgeDays: z.number().int().min(1).max(3650),
+  /** Hard cap of stored events per execution; extra output is dropped and flagged. */
+  maxEventsPerExecution: z.number().int().min(100).max(1_000_000),
+  /** Bytes of output text stored per execution (beyond that, chunks are truncated). */
+  maxStoredOutputBytesPerExecution: z
+    .number()
+    .int()
+    .min(64 * 1024)
+    .max(1024 * 1024 * 1024),
+  /** Audit rows older than this are pruned (a signed summary row is kept). */
+  auditMaxAgeDays: z.number().int().min(30).max(3650),
+  /** Log files: size per file and number of rotated files kept. */
+  logMaxFileBytes: z
+    .number()
+    .int()
+    .min(64 * 1024)
+    .max(512 * 1024 * 1024),
+  logMaxFiles: z.number().int().min(1).max(50),
+  /** Automatic local backups kept. */
+  backupsToKeep: z.number().int().min(1).max(100),
+});
+export type RetentionSettings = z.infer<typeof RetentionSettingsSchema>;
+
+export const DEFAULT_RETENTION: RetentionSettings = Object.freeze({
+  executionEventsMaxAgeDays: 30,
+  maxEventsPerExecution: 50_000,
+  maxStoredOutputBytesPerExecution: 32 * 1024 * 1024,
+  auditMaxAgeDays: 365,
+  logMaxFileBytes: 5 * 1024 * 1024,
+  logMaxFiles: 5,
+  backupsToKeep: 5,
+});
+
 export const ApplicationSettingsSchema = z.object({
   schemaVersion: z.literal(SETTINGS_SCHEMA_VERSION),
   language: z.enum(['pt-BR', 'en']),
@@ -189,6 +225,8 @@ export const ApplicationSettingsSchema = z.object({
       .int()
       .min(1000)
       .max(24 * 60 * 60 * 1000),
+    /** @since 0.2.0 */
+    maxConcurrentPerAgent: z.number().int().min(1).max(64).default(2),
   }),
   security: z.object({
     /** Approval timeout; expired requests are denied. */
@@ -199,7 +237,24 @@ export const ApplicationSettingsSchema = z.object({
       .max(24 * 60 * 60 * 1000),
     /** Additional actions that require approval (on top of ALWAYS_ASK_ACTIONS). */
     extraApprovalActions: z.array(PermissionActionSchema),
+    /** @since 0.2.0 — default lifetime of session/project grants. */
+    defaultGrantTtlMs: z
+      .number()
+      .int()
+      .min(60_000)
+      .max(30 * 24 * 60 * 60 * 1000)
+      .default(8 * 60 * 60 * 1000),
   }),
+  /** @since 0.2.0 — bounds growth of logs and history. */
+  retention: RetentionSettingsSchema.default(DEFAULT_RETENTION),
+  /** @since 0.2.0 — global consumption limits (null = unlimited). */
+  budget: z
+    .object({
+      currency: z.string().length(3),
+      maxPerDay: z.number().nonnegative().nullable(),
+      maxPerMonth: z.number().nonnegative().nullable(),
+    })
+    .default({ currency: 'USD', maxPerDay: null, maxPerMonth: null }),
   /** DevBrain has no telemetry; kept explicit so it cannot be silently enabled. */
   telemetry: z.literal(false),
 });
@@ -209,15 +264,34 @@ export const DEFAULT_SETTINGS: ApplicationSettings = Object.freeze({
   schemaVersion: SETTINGS_SCHEMA_VERSION,
   language: 'pt-BR',
   theme: 'system',
-  execution: { maxConcurrentExecutions: 4, defaultTimeoutMs: 30 * 60 * 1000 },
-  security: { approvalTimeoutMs: 15 * 60 * 1000, extraApprovalActions: [] },
+  execution: {
+    maxConcurrentExecutions: 4,
+    defaultTimeoutMs: 30 * 60 * 1000,
+    maxConcurrentPerAgent: 2,
+  },
+  security: {
+    approvalTimeoutMs: 15 * 60 * 1000,
+    extraApprovalActions: [],
+    defaultGrantTtlMs: 8 * 60 * 60 * 1000,
+  },
+  retention: { ...DEFAULT_RETENTION },
+  budget: { currency: 'USD', maxPerDay: null, maxPerMonth: null },
   telemetry: false,
 }) as ApplicationSettings;
 
 export const SettingsPatchSchema = z.object({
   language: ApplicationSettingsSchema.shape.language.optional(),
   theme: ApplicationSettingsSchema.shape.theme.optional(),
-  execution: ApplicationSettingsSchema.shape.execution.partial().optional(),
-  security: ApplicationSettingsSchema.shape.security.partial().optional(),
+  execution: patchOf(ApplicationSettingsSchema.shape.execution).optional(),
+  security: patchOf(ApplicationSettingsSchema.shape.security).optional(),
+  retention: patchOf(RetentionSettingsSchema).optional(),
+  budget: z
+    .object({
+      currency: z.string().length(3),
+      maxPerDay: z.number().nonnegative().nullable(),
+      maxPerMonth: z.number().nonnegative().nullable(),
+    })
+    .partial()
+    .optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
