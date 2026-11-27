@@ -148,6 +148,20 @@ export const buildAgentCommand = (
           `--print=${prompt}`,
         ],
       };
+    case 'opencode-cli':
+      return {
+        executable: 'opencode',
+        args: [
+          'run',
+          '--standalone',
+          '--format',
+          'json',
+          '--agent',
+          options.readOnly ? 'plan' : 'build',
+          // A safe prefix prevents an untrusted prompt beginning with `--` from becoming a flag.
+          `User request:\n${prompt}`,
+        ],
+      };
     default:
       throw new DevBrainError('UNSUPPORTED', 'Adapter does not support prompt execution');
   }
@@ -348,6 +362,19 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
           terminalSignal = 'success';
         if (value.type === 'turn.failed' || (value.type === 'result' && value.is_error === true))
           terminalSignal = 'failure';
+        if (provider.adapterKey === 'opencode-cli') {
+          if (value.type === 'error') terminalSignal = 'failure';
+          const part =
+            value.part && typeof value.part === 'object'
+              ? (value.part as Record<string, unknown>)
+              : null;
+          if (part?.type === 'text' && typeof part.text === 'string')
+            await emit({
+              type: 'message',
+              role: 'assistant',
+              text: redactString(part.text).slice(0, 1_048_576),
+            });
+        }
         const item =
           value.item && typeof value.item === 'object'
             ? (value.item as Record<string, unknown>)
@@ -512,7 +539,10 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
                     : 'modified',
             });
         }
-      const validSuccess = request.payload.kind === 'command' || terminalSignal === 'success';
+      const validSuccess =
+        request.payload.kind === 'command' ||
+        terminalSignal === 'success' ||
+        (provider.adapterKey === 'opencode-cli' && terminalSignal !== 'failure');
       const status: ExecutionStatus = timedOut
         ? 'timed-out'
         : active.abort.signal.aborted
