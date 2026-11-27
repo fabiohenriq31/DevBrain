@@ -407,6 +407,16 @@ export const IPC_CHANNELS = {
     z.array(R.ProviderConnectionSchema),
     'Configured inference connections.',
   ),
+  'ai.endpoints.list': channel(
+    Empty,
+    z.array(R.ProviderEndpointSchema),
+    'Configured inference endpoints.',
+  ),
+  'ai.endpoints.save': channel(
+    R.ProviderEndpointSchema,
+    R.ProviderEndpointSchema,
+    'Save an explicitly authorized endpoint.',
+  ),
   'ai.connections.save': channel(
     R.ProviderConnectionSchema,
     R.ProviderConnectionSchema,
@@ -426,6 +436,22 @@ export const IPC_CHANNELS = {
     z.object({ connectionId: R.AiResourceIdSchema.optional() }),
     z.array(R.ModelDefinitionSchema),
     'Discovered models.',
+  ),
+  'ai.models.save': channel(
+    R.ModelDefinitionSchema,
+    R.ModelDefinitionSchema,
+    'Save a verified or explicitly configured model.',
+  ),
+  'ai.routes.list': channel(Empty, z.array(R.ModelRouteSchema), 'Configured model routes.'),
+  'ai.routes.save': channel(R.ModelRouteSchema, R.ModelRouteSchema, 'Save a model route.'),
+  'ai.policies.configure': channel(
+    z.object({
+      policy: R.RoutingPolicySchema,
+      billing: R.BillingPolicySchema,
+      privacy: R.PrivacyPolicySchema,
+    }),
+    R.RoutingPolicySchema,
+    'Configure initial deterministic routing.',
   ),
   'ai.models.availability': channel(
     z.object({ modelId: R.AiResourceIdSchema, connectionId: R.AiResourceIdSchema }),
@@ -496,6 +522,11 @@ export const IPC_CHANNELS = {
     }),
     z.object({ operationId: R.AiResourceIdSchema }),
     'Download an explicitly selected local model.',
+  ),
+  'ai.local.cancelPull': channel(
+    z.object({ operationId: R.AiResourceIdSchema }),
+    z.object({ cancelled: z.boolean() }),
+    'Cancel an active model download.',
   ),
   'ai.local.remove': channel(
     z.object({

@@ -17,7 +17,7 @@ const SafeUrl = z.url().refine((value) => {
 export const ProviderCatalogEntrySchema = z.object({
   id: Id,
   name: z.string().min(1),
-  documentationUrl: SafeUrl,
+  documentationUrl: SafeUrl.nullable(),
   kind: z.enum(['api', 'local', 'subscription', 'cli']),
   signupUrl: SafeUrl.nullable(),
   termsUrl: SafeUrl.nullable(),
@@ -168,7 +168,7 @@ export const QuotaReservationSchema = z.object({
   quotaId: Id,
   requestId: Id,
   amount: NonNegative,
-  status: z.enum(['held', 'committed', 'released', 'expired']),
+  status: z.enum(['held', 'committed', 'released', 'expired', 'uncertain']),
   expiresAt: TimestampSchema,
 });
 export type QuotaReservation = z.infer<typeof QuotaReservationSchema>;
@@ -245,6 +245,7 @@ export const InferenceRequestSchema = z.object({
   stream: z.boolean(),
   routingPolicyId: Id,
   idempotencyKey: z.string().max(200).nullable(),
+  deadlineMs: z.number().int().min(1000).max(600_000).optional(),
 });
 export type InferenceRequest = z.infer<typeof InferenceRequestSchema>;
 export const InferenceErrorSchema = z.object({
