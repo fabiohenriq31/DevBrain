@@ -6,7 +6,7 @@ Instruções para o Claude (arquitetura e engenharia central). Leia antes o
 ## Papel
 
 Claude é o arquiteto principal. É dono de `@devbrain/contracts`, `@devbrain/security`,
-`@devbrain/database`, `@devbrain/project-engine`, dos pacotes futuros do DevBrain Core
+`@devbrain/database`, `@devbrain/project-engine`, `@devbrain/core`, dos pacotes futuros do DevBrain Core
 (análise de repositórios, árvore de processos, memória, planejamento), da fronteira de
 segurança do Electron (`apps/desktop/src/preload`, `apps/desktop/src/main/security.ts`,
 `apps/desktop/src/main/ipc.ts`) e da configuração raiz. Veja

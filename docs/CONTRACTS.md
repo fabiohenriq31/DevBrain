@@ -1,6 +1,6 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.1.0**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.2.0**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
 
 Os contratos são a única interface entre os módulos dos três agentes. São escritos em
@@ -29,6 +29,15 @@ confiança.
 | `Checkpoint` | `entities/records.ts` | Estado versionado e neutro em relação ao provedor |
 | `AuditEvent`, `AuditActor` | `entities/records.ts` | Append-only; detalhes redigidos |
 | `ApplicationSettings`, `SettingsPatch`, `DEFAULT_SETTINGS` | `entities/records.ts` | `telemetry: false` literal |
+| `RetentionSettings`, `DEFAULT_RETENTION` (0.2.0) | `entities/records.ts` | Limites de eventos, saída, auditoria, logs e backups |
+| `Technology`, `CreateProjectInput`, `RemoveProjectInput`, `ProjectSettings(Patch)`, `UpdateWorkspaceAccessInput` (0.2.0) | `entities/project.ts`, `entities/core.ts` | `remove` exige `confirm: true` e nunca apaga arquivos |
+| `ProviderConfig`, `Evidence`, `ProviderHealth`, `ProviderReadiness`, `ProviderProfile` (0.2.0) | `entities/core.ts` | Prontidão derivada só de evidências do motor de execução |
+| `EnforcementLevel` (0.2.0) | `entities/provider.ts` | `per-action` / `adapter-sandbox` / `none`; ausente = `none` |
+| `StoreCredentialInput` (0.2.0) | `entities/core.ts` | Valor só entra (renderer → main); nunca volta |
+| `SessionFile`, `ExecutionRecord`, `SessionHistory`, `CheckpointStateV1`, `SaveCheckpointInput` (0.2.0) | `entities/core.ts` | Checkpoint estruturado, base da memória compartilhada |
+| `ApprovalScope`, `PermissionGrant`, `EvaluatePermissionInput`, `PermissionVerdict` (0.2.0) | `entities/permissions.ts`, `entities/core.ts` | Grants só elevam `ask`; nunca `deny` nem `ALWAYS_ASK` |
+| `UsageSummary`, `UsageRecordInput` (0.2.0) | `entities/core.ts` | Custos informados pelo provedor; nada é estimado |
+| `StorageHealth`, `BackupResult`, `PruneResult`, `ProjectExport` (0.2.0) | `entities/core.ts` | Saúde do banco e recuperação |
 
 ### Erros
 
@@ -46,12 +55,12 @@ transmissão). Os códigos estáveis ficam em `ErrorCodeSchema`. Por exemplo, `N
 
 | Interface | Cobre | Dono |
 | --- | --- | --- |
-| `ProjectService` | Cadastro e gerenciamento de projetos | Claude |
+| `ProjectService` | Cadastro e gerenciamento de projetos (ampliado em 0.2.0) | Claude |
 | `AgentDiscoveryService` | Descoberta de agentes, verificação de dependências, capacidades | Codex |
-| `SessionService` | Inicialização e encerramento de sessões | Codex |
+| `SessionService` | Registro e ciclo de vida de sessões (`@devbrain/core` `SessionManager`); processos ficam com o motor | Claude (registro) / Codex (processos) |
 | `ExecutionService` | Envio de instruções, streaming, interrupção | Codex |
 | `ExecutionHistoryStore` | Persistência de histórico | Claude |
-| `PermissionService` | Decisão de permissão | Claude |
+| `PermissionService` | `evaluate` + `enforce` (0.2.0, **incompatível** com o `check` da 0.1.0) | Claude |
 | `ApprovalService` | Aprovação de ações sensíveis | Claude (UI: Antigravity) |
 | `AuditLog`, `SettingsStore`, `CheckpointStore` | Auditoria, configurações, checkpoints | Claude |
 | `GitService` | Repositórios, status, worktrees | Codex |
@@ -66,7 +75,7 @@ transmissão). Os códigos estáveis ficam em `ErrorCodeSchema`. Por exemplo, `N
 
 - `IPC_CHANNELS`: mapa `chave → { request, response, description }`. Nome no fio:
   `devbrain:v1:<chave>`.
-- `IPC_EVENTS`: eventos do main para o renderer (`execution.event`, `approval.requested`,
+- `IPC_EVENTS`: eventos do main para o renderer (`execution.event`, `approval.requested`, `approval.decided`, `sessions.changed`, `providers.changed`,
   `projects.changed`). Nome no fio: `devbrain:v1:event:<chave>`.
 - `IpcRequestEnvelope { contractsVersion, correlationId, payload }` e
   `IpcResponse<T>`.
@@ -75,18 +84,31 @@ transmissão). Os códigos estáveis ficam em `ErrorCodeSchema`. Por exemplo, `N
 
 Canais disponíveis na v1:
 
-| Canal | Implementado na Etapa 00 |
+| Canal | Status |
 | --- | --- |
-| `system.getInfo` | ✅ |
-| `projects.list` / `get` / `register` / `update` / `archive` / `pickDirectory` | ✅ |
-| `settings.get` / `update` | ✅ |
-| `audit.list` | ✅ |
+| `system.getInfo` / `storageHealth` / `backup` | ✅ |
+| `projects.list` / `get` / `register` / `create` / `update` / `archive` / `restore` / `remove` | ✅ |
+| `projects.listRecent` / `markOpened` / `detectTechnologies` / `getSettings` / `updateSettings` / `export` / `pickDirectory` | ✅ |
+| `workspaces.list` / `updateAccess` | ✅ |
+| `providers.listConfigured` / `get` / `register` / `update` / `setEnabled` / `remove` | ✅ |
+| `agents.list` / `register` / `update` | ✅ |
+| `credentials.list` / `store` / `remove` | ✅ (valores nunca saem do main) |
+| `sessions.start` / `stop` / `get` / `list` / `listByProject` / `history`, `checkpoints.get` | ✅ (registro; não inicia processos) |
+| `permissions.listPolicies` / `savePolicy` / `listGrants` / `revokeGrant` / `evaluate` | ✅ |
+| `approvals.listPending` / `decide` | ✅ |
+| `executions.getResult` / `listEvents` | ✅ (histórico persistido) |
+| `usage.summary`, `settings.get` / `update`, `audit.list` | ✅ |
 | `providers.listAdapters` / `checkDependencies` / `getCapabilities` | ⏳ Fase 01 (Codex) |
-| `sessions.start` / `stop` / `listByProject` | ⏳ Fase 01 (Codex) |
-| `executions.submit` / `interrupt` / `getResult` / `listEvents` | ⏳ Fase 01 (Codex + Claude) |
-| `approvals.listPending` / `decide` | ⏳ Fase 01 (Claude) |
+| `executions.submit` / `interrupt` | ⏳ Fase 01 (Codex) |
 
 Os canais ⏳ respondem `UNSUPPORTED` até serem implementados.
+
+**APIs só do main (sem canal IPC, de propósito):** `ProviderService.recordEvidence`
+(evidências de instalação, autenticação e operação), `CredentialService.resolve` (valor do
+segredo, auditado), `AuthorizationService.enforce` / `authorizeCommand` /
+`authorizeExecution` / `acquireSlot` e `SessionManager.recordInstruction` / `recordEvent` /
+`recordResult` / `saveCheckpoint`. O renderer não consegue declarar um provedor disponível
+nem decidir permissões por conta própria.
 
 ## Regras de versionamento
 
@@ -112,6 +134,31 @@ isso fizer sentido (por exemplo, exibir "desconhecido" na UI). O main recusa um 
 com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
+
+### 0.2.0 (Fase 01, bloco Claude)
+
+Aditivo, exceto onde marcado. Payloads gravados pela 0.1.0 continuam válidos (campos novos
+têm `.default()`); ver `packages/contracts/src/compat.test.ts`.
+
+- Entidades novas em `entities/core.ts` (projetos, provedores, credenciais, sessões,
+  grants, uso, manutenção) e os campos novos listados no inventário.
+- `Project`: `technologies`, `lastOpenedAt`. `AgentSession`: `title`, `endReason`,
+  `resumedFromSessionId`, `updatedAt`. `ApprovalRequest`: `projectId`, `scope`, `target`.
+  `ApprovalDecisionInput`: `scope`, `grantTtlMs`. `AgentCapabilities`: `enforcement`.
+  `ApplicationSettings`: `execution.maxConcurrentPerAgent`, `security.defaultGrantTtlMs`,
+  `retention`, `budget`.
+- `SessionStatus`: novos `completed`, `cancelled`, `interrupted`. `ended` e `suspended`
+  ficam **depreciados**: aceitos na leitura (normalizados para `completed` e
+  `interrupted`), nunca produzidos.
+- `ErrorCode`: `INTERRUPTED`, `STORAGE_ERROR`, `BUDGET_EXCEEDED`. Prefixo de id `grt`.
+- 35 canais IPC novos (57 no total; tabela acima) e eventos `approval.decided`, `sessions.changed`,
+  `providers.changed`.
+- `patchOf(schema)`: schemas de patch não injetam defaults.
+- **Incompatível:** `PermissionService.check(PermissionCheck)` foi substituído por
+  `evaluate` / `enforce(EvaluatePermissionInput)`, que exigem `workspaceId`. Nenhum
+  consumidor implementado usava a interface antiga. Ver INTEGRATION.md.
+- `ApprovalService.request` recebe o formato reduzido (`NewApprovalInput`).
+- Correção: `AbsolutePathSchema` aceita `C:/` e `C:\`.
 
 ### 0.1.0 (Etapa 00)
 

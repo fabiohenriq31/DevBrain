@@ -21,6 +21,14 @@ Os pontos de encontro são os contratos de `@devbrain/contracts`.
 | C7 | Repositórios de `providers`, `agents`, `agent_sessions` (migração 2) | Migração nova; checksums intactos |
 | C8 | Revisão de segurança dos PRs de Codex e Antigravity | Checklist de SECURITY.md aplicado |
 
+**Status (2026-11-27):** C1 a C7 entregues em `phase-01/claude-core`, junto com o escopo
+ampliado pela missão do bloco (projetos completos, provedores com prontidão por
+evidência, sessões e histórico, recuperação, retenção, orçamento, concorrência). C3 está
+coberto por teste de integração e smoke de listagem; o fluxo aprovar/negar ponta a ponta
+no app depende da UI (A4). C8 aguarda os PRs. Detalhes e evidências em PROGRESS.md; API
+para o motor em INTEGRATION.md. X4 (concorrência) e a parte de registro de X5 (sessões)
+ficaram prontos no Core; o Codex os consome.
+
 ## Bloco Codex: `phase-01/codex-engine`
 
 | # | Entrega | Critério de aceite |
