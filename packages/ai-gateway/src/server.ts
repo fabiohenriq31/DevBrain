@@ -33,10 +33,25 @@ export class LocalGatewayServer {
   private readonly secret = randomBytes(32).toString('hex');
   private port = 0;
 
+  /**
+   * `context` binds this server instance (and its token) to one project/session, so that
+   * project privacy and budget policies apply to everything an external client sends.
+   */
   constructor(
     private readonly gateway: AiGateway,
     private readonly routingPolicyId: string,
+    private readonly context: { projectId?: string; sessionId?: string } = {},
   ) {}
+
+  /**
+   * DNS-rebinding / browser defence: only loopback Host headers for our port, and no browser
+   * Origin at all (coding clients are not browsers).
+   */
+  private trustedOrigin(request: IncomingMessage): boolean {
+    const host = request.headers.host;
+    if (request.headers.origin !== undefined) return false;
+    return host === `127.0.0.1:${this.port}` || host === `localhost:${this.port}`;
+  }
 
   get baseUrl(): string {
     if (!this.server) throw new DevBrainError('NOT_FOUND', 'Gateway server is not running');
@@ -57,6 +72,10 @@ export class LocalGatewayServer {
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (!this.trustedOrigin(request)) {
+      send(response, 403, { error: { message: 'Forbidden host', type: 'forbidden' } });
+      return;
+    }
     if (!this.authenticated(request)) {
       send(response, 401, { error: { message: 'Unauthorized', type: 'authentication_error' } });
       return;
@@ -82,7 +101,8 @@ export class LocalGatewayServer {
       throw new DevBrainError('VALIDATION_FAILED', 'Model and messages are required');
     const parsed = InferenceRequestSchema.safeParse({
       id: `inf_${randomUUID()}`,
-      sessionId: null,
+      sessionId: this.context.sessionId ?? null,
+      ...(this.context.projectId ? { projectId: this.context.projectId } : {}),
       modelId: input.model,
       messages: input.messages,
       maxOutputTokens: typeof input.max_tokens === 'number' ? input.max_tokens : null,

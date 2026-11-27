@@ -4,7 +4,7 @@ import https from 'node:https';
 import { isIP } from 'node:net';
 import { DevBrainError } from '@devbrain/contracts';
 
-const isPublicAddress = (address: string): boolean => {
+export const isPublicAddress = (address: string): boolean => {
   if (isIP(address) === 4) {
     const n = address.split('.').map(Number);
     const a = n[0] ?? 0,
@@ -22,7 +22,14 @@ const isPublicAddress = (address: string): boolean => {
   }
   if (isIP(address) === 6) {
     const normalized = address.toLowerCase();
-    return /^[23]/.test(normalized) && !normalized.startsWith('2001:db8');
+    // Global unicast only. 6to4 (2002::/16) and Teredo (2001:0::/32) embed IPv4 addresses
+    // (possibly private ones) and are tunnelled, so they are rejected like private ranges.
+    return (
+      /^[23]/.test(normalized) &&
+      !normalized.startsWith('2001:db8') &&
+      !normalized.startsWith('2002:') &&
+      !/^2001:0{0,4}:/.test(normalized)
+    );
   }
   return false;
 };

@@ -48,6 +48,38 @@ export class QuotaLedger {
     return new Date(Math.floor(this.clock() / period) * period).toISOString();
   }
 
+  /**
+   * Read-only view of the current window (used, reserved — uncertain calls count as used at
+   * their full reserved amount). Added for the intelligence policies; it never mutates.
+   */
+  windowState(quotaId: string): {
+    definition: QuotaDefinition;
+    windowStart: string;
+    resetAt: string;
+    used: number;
+    reserved: number;
+    remaining: number | null;
+  } | null {
+    const def = this.definitions().find((d) => d.id === quotaId);
+    if (!def) return null;
+    const windowStart = this.start(def);
+    const row = this.db.get<WindowRow>(
+      'SELECT used, reserved FROM ai_quota_windows WHERE quota_id=:id AND window_start=:start',
+      { id: def.id, start: windowStart },
+    );
+    const used = Number(row?.used ?? 0),
+      reserved = Number(row?.reserved ?? 0);
+    const period = (def.periodSeconds ?? 86_400) * 1000;
+    return {
+      definition: def,
+      windowStart,
+      resetAt: new Date(Date.parse(windowStart) + period).toISOString(),
+      used,
+      reserved,
+      remaining: def.limit === null ? null : Math.max(0, def.limit - used - reserved),
+    };
+  }
+
   /** Admission for all shared quota scopes succeeds or fails as one transaction. */
   reserveAll(
     requestId: string,

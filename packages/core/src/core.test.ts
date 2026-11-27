@@ -407,7 +407,7 @@ describe('crash recovery', () => {
     expect(second.maintenance.health()).toMatchObject({
       uncleanShutdownDetected: true,
       recoveredSessions: 1,
-      schemaVersion: 3,
+      schemaVersion: 4,
     });
 
     // Clean shutdown is not reported as a crash.

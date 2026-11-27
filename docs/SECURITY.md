@@ -232,6 +232,25 @@ Consolidação (ADR-0020): **custo desconhecido não é custo zero**.
   `system.storageHealth` informa o que aconteceu.
 - Backup automático antes de cada migração e diariamente (`VACUUM INTO`, rotação).
 
+## Inteligência de recursos (Fase 02)
+
+- Privacidade, orçamento e cotas são decididos no main antes de cada tentativa; a UI só
+  exibe. Projeto sem política = `personal-private`; fato desconhecido não libera envio.
+- `local-only`/`restricted` bloqueiam toda saída externa; rota "local" que não aponta
+  para loopback não é local.
+- Fallback nunca troca a classe de privacidade nem passa de gratuito para pago sem
+  autorização explícita; após saída exposta não há fallback.
+- Chaves diferentes do mesmo provedor não são capacidade independente: um 429 esfria
+  todas as rotas do provedor. Não há estratégia de rotação para contornar limites.
+- Conteúdo de arquivo e de ferramenta é dado (`<untrusted-data>`), nunca instrução; o
+  classificador de tarefa lê apenas a instrução do usuário.
+- Cache de contexto: memória, com escopo projeto+usuário, sem disco.
+- Benchmark: código gerado roda com `node --permission`, ambiente vazio e timeout. O
+  modelo de permissões do Node **não** bloqueia rede: rode benchmarks apenas contra rotas
+  confiáveis.
+- Servidor loopback: token Bearer, `Host` restrito ao próprio endereço e sem `Origin`
+  (defesa contra DNS rebinding e páginas web).
+
 ## Repositório público
 
 - Nunca publique credenciais, `.env`, `*.db`, logs, configurações pessoais
