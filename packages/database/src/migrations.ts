@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { DevBrainError } from '@devbrain/contracts';
 import type { SqlDriver } from './driver.js';
+import { MIGRATION_002 } from './migration-002.js';
 
 /**
  * Forward-only, append-only migrations. Rules:
@@ -149,6 +150,7 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  { id: 2, name: 'phase-01-core', sql: MIGRATION_002 },
 ];
 
 const checksum = (sql: string): string =>
