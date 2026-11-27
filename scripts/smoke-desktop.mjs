@@ -167,6 +167,15 @@ const checks = JSON.parse(
   r.insideAllowed = inside.ok && inside.data.decision === 'allow';
   const pending = await window.devbrain.invoke('approvals.listPending', {});
   r.approvalsOk = pending.ok && Array.isArray(pending.data);
+  const gitStatus = await window.devbrain.invoke('git.status', { workspaceId: ws0 });
+  r.gitStatusChannelOk = gitStatus.ok;
+  const gitDiff = await window.devbrain.invoke('git.diff', { workspaceId: ws0 });
+  r.gitDiffChannelOk = gitDiff.ok && typeof gitDiff.data.diff === 'string';
+  for (let i = 0; i < 30 && !document.querySelector('.db-titlebar'); i += 1) {
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  r.uiShellMounted = !!document.querySelector('.db-titlebar') && document.querySelectorAll('.db-nav-item').length === 5;
+  r.uiThemeApplied = ['dark', 'light'].includes(document.documentElement.getAttribute('data-theme') ?? '');
   r.sessionId = ses.ok ? ses.data.id : null;
   return r;
 })().then((r) => JSON.stringify(r), (e) => JSON.stringify({ error: String(e && e.stack || e) }))`
@@ -225,6 +234,10 @@ const after = await second.evaluate(
   r.recoveredSessions = health.ok ? health.data.recoveredSessions : -1;
   const s = await window.devbrain.invoke('sessions.get', { sessionId: '__SID__' });
   r.sessionAfterCrash = s.ok ? s.data.status : JSON.stringify(s.error);
+  for (let i = 0; i < 30 && !document.querySelector('[data-testid="terminal-pane"]'); i += 1) {
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  r.uiTerminalMounted = !!document.querySelector('[data-testid="terminal-pane"] .xterm');
   return r;
 })()`.replaceAll('__SID__', checks?.sessionId ?? ''),
 );
@@ -264,6 +277,10 @@ const expected = {
   envDenied: true,
   insideAllowed: true,
   approvalsOk: true,
+  gitStatusChannelOk: true,
+  gitDiffChannelOk: true,
+  uiShellMounted: true,
+  uiThemeApplied: true,
   executionStatus: 'completed',
   executionStreamed: true,
   executionOrdered: true,
@@ -271,6 +288,7 @@ const expected = {
   uncleanDetected: true,
   recoveredSessions: 1,
   sessionAfterCrash: 'interrupted',
+  uiTerminalMounted: true,
 };
 const failures = Object.entries(expected).filter(([k, v]) => checks?.[k] !== v);
 if (failures.length) {
