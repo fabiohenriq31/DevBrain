@@ -1,6 +1,6 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.5.0**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.6.0**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
 
 Os contratos são a única interface entre os módulos dos três agentes. São escritos em
@@ -135,6 +135,14 @@ isso fizer sentido (por exemplo, exibir "desconhecido" na UI). O main recusa um 
 com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
+
+### 0.6.0 (Fase 02, adições de integração)
+
+- `ProviderCatalogEntry.documentationUrl` aceita `null` para entradas descobertas sem
+  documentação confirmada; `QuotaReservation.status` inclui `uncertain` para chamadas
+  interrompidas; `InferenceRequest.deadlineMs` é opcional.
+- Canais aditivos para endpoints, modelos e rotas configurados, política determinística
+  inicial e cancelamento de download local. Mantém o namespace IPC `devbrain:v1`.
 
 ### 0.5.0 (Fase 02, base compartilhada)
 
