@@ -66,9 +66,9 @@ simulada e reinício do app real).
 | Descoberta de Codex, Claude Code e Antigravity CLI | 🟡 | Registry e verificação de executável/versão; apenas Codex está instalado nesta máquina |
 | Git: detecção, status porcelain v2, diff e commits | ✅ | Teste com repositório temporário e arquivos modificados/não rastreados |
 | Git worktrees | 🟡 | Criar/remover worktree sem força; recusa remoção com alterações; orquestração paralela reservada à Fase 03 |
-| Canais IPC de execução e descoberta | ⏳ | Pedido de integração ao dono em `docs/INTEGRATION.md` |
+| Canais IPC de execução e descoberta | 🟡 | Implementados no PR #2, separado para revisão de Claude e Antigravity; smoke faz comando real pelo IPC e consulta histórico persistido |
 | CI | 🟡 | Workflow Windows existente; execução remota do PR ainda não verificada |
-| Instalador Windows | ⏳ | Ainda não implementado |
+| Instalador Windows | 🟡 | PR #2 gera NSIS sem assinatura; executável empacotado passou no smoke, pendente revisão |
 
 Validação externa isolada: `codex exec --json --sandbox workspace-write`, autenticado
 pela conta ChatGPT, alterou `counter.js` num diretório temporário (adicionou
