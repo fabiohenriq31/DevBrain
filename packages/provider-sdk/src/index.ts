@@ -59,6 +59,13 @@ export interface ProviderAdapter {
     input: { sessionId: string; workingDirectory: string; resumeExternalSessionId?: string },
     context: AdapterContext,
   ): Promise<AdapterSessionHandle>;
+  /**
+   * In-process execution for adapters that implement their own transport. The built-in CLI
+   * adapters do NOT implement it (they throw `UNSUPPORTED`): CLI agents run only through
+   * `OperationalExecutionService`, which applies Core authorization, approvals, budget,
+   * concurrency, persistence and cancellation. Callers must not treat `execute` as a
+   * supported path for those adapters.
+   */
   execute(
     session: AdapterSessionHandle,
     request: ExecutionRequest,
@@ -109,6 +116,15 @@ const locate = async (name: string): Promise<string | null> => {
 };
 
 type CliKind = 'codex' | 'claude' | 'antigravity';
+/**
+ * Presence probe. `agy` documents `--help` but not `--version`; for it the version stays
+ * unknown (null) and a successful `--help` proves the executable runs.
+ */
+const PROBE_ARGS: Record<CliKind, string[]> = {
+  codex: ['--version'],
+  claude: ['--version'],
+  antigravity: ['--help'],
+};
 const specs = {
   codex: {
     key: 'openai-codex-cli',
@@ -126,7 +142,7 @@ const specs = {
       structuredOutput: true,
       maxConcurrentSessions: null,
       contextWindowTokens: null,
-      costModel: 'subscription' as const,
+      costModel: 'unknown' as const,
       enforcement: process.platform === 'win32' ? ('none' as const) : ('adapter-sandbox' as const),
     },
   },
@@ -146,7 +162,7 @@ const specs = {
       structuredOutput: true,
       maxConcurrentSessions: null,
       contextWindowTokens: null,
-      costModel: 'subscription' as const,
+      costModel: 'unknown' as const,
       enforcement: 'none' as const,
     },
   },
@@ -154,7 +170,7 @@ const specs = {
     key: 'google-antigravity-cli',
     name: 'Google Antigravity CLI',
     executable: 'agy',
-    url: 'https://codelabs.developers.google.com/sdd-agy-cli',
+    url: 'https://antigravity.google/docs/cli/headless/',
     capabilities: {
       streaming: false,
       interrupt: true,
@@ -163,7 +179,7 @@ const specs = {
       fileEdits: true,
       shellCommands: true,
       mcp: true,
-      structuredOutput: false,
+      structuredOutput: true,
       maxConcurrentSessions: null,
       contextWindowTokens: null,
       costModel: 'unknown' as const,
@@ -194,9 +210,13 @@ class CliAdapter implements ProviderAdapter {
     const spec = specs[this.kind],
       resolvedPath = await locate(spec.executable);
     let version: string | null = null;
+    let runs = false;
     if (resolvedPath) {
       version = await new Promise((resolve) => {
-        const child = spawn(resolvedPath, ['--version'], { shell: false, windowsHide: true });
+        const child = spawn(resolvedPath, PROBE_ARGS[this.kind], {
+          shell: false,
+          windowsHide: true,
+        });
         let output = '';
         const timeout = setTimeout(() => child.kill(), 5000);
         child.stdout?.on('data', (data: Buffer) => {
@@ -208,22 +228,29 @@ class CliAdapter implements ProviderAdapter {
         });
         child.once('close', (code) => {
           clearTimeout(timeout);
-          resolve(code === 0 ? output.trim() : null);
+          runs = code === 0;
+          resolve(code === 0 && this.kind !== 'antigravity' ? output.trim() : null);
         });
       });
     }
     return {
       adapterKey: spec.key,
-      status: resolvedPath && version ? 'available' : 'missing-dependency',
+      status: resolvedPath && runs ? 'available' : 'missing-dependency',
       checks: [
         {
           name: spec.executable,
           required: true,
-          found: !!resolvedPath && !!version,
+          found: !!resolvedPath && runs,
           version,
           minimumVersion: null,
           resolvedPath,
-          message: resolvedPath ? null : 'Executable not found',
+          message: !resolvedPath
+            ? 'Executable not found'
+            : !runs
+              ? 'Executable did not run'
+              : version === null
+                ? 'Version not reported by this CLI'
+                : null,
         },
       ],
       checkedAt: nowTimestamp(),

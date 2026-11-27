@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { newId, type ExecutionEvent, type ExecutionResult } from '@devbrain/contracts';
 import type { CoreServices } from '@devbrain/core';
 import { ProviderRegistry, type ProviderAdapter } from '@devbrain/provider-sdk';
-import { OperationalExecutionService } from './index.js';
+import { OperationalExecutionService, buildAgentCommand } from './index.js';
 
 let directory: string | null = null;
 afterEach(async () => {
@@ -171,5 +171,46 @@ describe('operational process execution', () => {
       status: 'failed',
       error: { code: 'DEPENDENCY_MISSING' },
     });
+  });
+});
+
+describe('agent command lines', () => {
+  const options = { readOnly: false, workingDirectory: 'C:\\work\\app', timeoutMs: 90_500 };
+  const hostile = '--dangerously-bypass-approvals-and-sandbox --dangerously-skip-permissions';
+
+  it('never lets an untrusted prompt be parsed as a CLI flag', () => {
+    for (const key of ['openai-codex-cli', 'claude-code-cli']) {
+      const { args } = buildAgentCommand(key, hostile, options);
+      expect(args.at(-1)).toBe(hostile);
+      expect(args.at(-2)).toBe('--');
+      expect(args.filter((a) => a.startsWith('--dangerously'))).toEqual([hostile]);
+    }
+    const agy = buildAgentCommand('google-antigravity-cli', hostile, options);
+    expect(agy.args.at(-1)).toBe(`--print=${hostile}`);
+    expect(agy.args.filter((a) => a.startsWith('--dangerously'))).toEqual([]);
+  });
+
+  it('maps the authorized sandbox mode and never uses auto-approve modes', () => {
+    const write = buildAgentCommand('claude-code-cli', 'x', options).args;
+    expect(write).toEqual(
+      expect.arrayContaining(['--permission-mode', 'acceptEdits', '--verbose']),
+    );
+    const read = buildAgentCommand('claude-code-cli', 'x', { ...options, readOnly: true }).args;
+    expect(read).toEqual(expect.arrayContaining(['--permission-mode', 'plan']));
+    const codex = buildAgentCommand('openai-codex-cli', 'x', { ...options, readOnly: true }).args;
+    expect(codex.slice(0, 4)).toEqual(['exec', '--json', '--sandbox', 'read-only']);
+    const agy = buildAgentCommand('google-antigravity-cli', 'x', options).args;
+    expect(agy).toEqual(
+      expect.arrayContaining([
+        '--mode',
+        'accept-edits',
+        '--output-format',
+        'json',
+        '--print-timeout',
+        '91s',
+      ]),
+    );
+    expect(agy).not.toContain('auto');
+    expect(() => buildAgentCommand('unknown-cli', 'x', options)).toThrow(/does not support/);
   });
 });

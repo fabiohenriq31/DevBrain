@@ -91,6 +91,67 @@ const killTree = async (child: ChildProcess, force: boolean): Promise<void> => {
     }
   }
 };
+/**
+ * Command line for a prompt to a supported agent CLI, from each vendor's official CLI docs
+ * (see the adapter descriptors' `documentationUrl`).
+ *
+ * The prompt is untrusted text: it is always passed so the CLI cannot read it as a flag
+ * (after `--`, or as the `=`-bound value of the prompt flag). Permission modes follow the
+ * authorized plan; auto-approve / bypass modes are never used.
+ */
+export const buildAgentCommand = (
+  adapterKey: string,
+  prompt: string,
+  options: { readOnly: boolean; workingDirectory: string; timeoutMs: number },
+): { executable: string; args: string[] } => {
+  switch (adapterKey) {
+    case 'openai-codex-cli':
+      return {
+        executable: 'codex',
+        args: [
+          'exec',
+          '--json',
+          '--sandbox',
+          options.readOnly ? 'read-only' : 'workspace-write',
+          '-C',
+          options.workingDirectory,
+          '--',
+          prompt,
+        ],
+      };
+    case 'claude-code-cli':
+      return {
+        executable: 'claude',
+        args: [
+          '-p',
+          '--output-format',
+          'stream-json',
+          // stream-json in print mode requires --verbose.
+          '--verbose',
+          '--permission-mode',
+          options.readOnly ? 'plan' : 'acceptEdits',
+          '--',
+          prompt,
+        ],
+      };
+    case 'google-antigravity-cli':
+      return {
+        executable: 'agy',
+        args: [
+          '--output-format',
+          'json',
+          // Headless agy defaults to `auto` mode where available; pin an explicit mode.
+          '--mode',
+          options.readOnly ? 'plan' : 'accept-edits',
+          '--print-timeout',
+          `${Math.max(1, Math.ceil(options.timeoutMs / 1000))}s`,
+          `--print=${prompt}`,
+        ],
+      };
+    default:
+      throw new DevBrainError('UNSUPPORTED', 'Adapter does not support prompt execution');
+  }
+};
 type Active = {
   status: ExecutionStatus;
   child: ChildProcess | null;
@@ -169,8 +230,9 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
       outputTruncated = false;
     let release: (() => void) | null = null;
     let timedOut = false,
-      terminalSignal: 'success' | 'failure' | null = null,
-      sawText = false;
+      terminalSignal: 'success' | 'failure' | null = null;
+    // Antigravity prints one (possibly multi-line) JSON document; parsed once at exit.
+    let documentOutput = '';
     let reportedUsage: ExecutionResult['usage'] = null;
     const emit = async (data: Record<string, unknown>) => {
       const event = {
@@ -219,47 +281,24 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
           throw new DevBrainError('DEPENDENCY_MISSING', 'Agent CLI unavailable');
       }
       const auth = await this.core.authorization.authorizeExecution(
-        { sessionId: session.id, workingDirectory: request.workingDirectory },
+        {
+          sessionId: session.id,
+          workingDirectory: request.workingDirectory,
+          costBearing: request.payload.kind === 'prompt',
+        },
         { signal: active.abort.signal },
       );
       release = await this.core.authorization.acquireSlot(agent.id, active.abort.signal);
       if (active.abort.signal.aborted)
         throw new DevBrainError('CANCELLED', 'Cancelled while queued');
-      const args =
+      const { executable, args } =
         request.payload.kind === 'prompt'
-          ? provider.adapterKey === 'openai-codex-cli'
-            ? [
-                'exec',
-                '--json',
-                '--sandbox',
-                auth.plan.sandboxMode === 'read-only' ? 'read-only' : 'workspace-write',
-                '-C',
-                auth.workingDirectory,
-                request.payload.prompt,
-              ]
-            : provider.adapterKey === 'claude-code-cli'
-              ? [
-                  '-p',
-                  request.payload.prompt,
-                  '--output-format',
-                  'stream-json',
-                  '--permission-mode',
-                  'default',
-                ]
-              : provider.adapterKey === 'google-antigravity-cli'
-                ? ['--print', request.payload.prompt]
-                : (() => {
-                    throw new DevBrainError('UNSUPPORTED', 'Programmatic execution unavailable');
-                  })()
-          : request.payload.args;
-      const executable =
-        request.payload.kind === 'prompt'
-          ? provider.adapterKey === 'openai-codex-cli'
-            ? 'codex'
-            : provider.adapterKey === 'claude-code-cli'
-              ? 'claude'
-              : 'agy'
-          : request.payload.executable;
+          ? buildAgentCommand(provider.adapterKey, request.payload.prompt, {
+              readOnly: auth.plan.sandboxMode === 'read-only',
+              workingDirectory: auth.workingDirectory,
+              timeoutMs: Math.min(request.timeoutMs, auth.limits.maxExecutionMs),
+            })
+          : { executable: request.payload.executable, args: request.payload.args };
       if (request.payload.kind === 'command')
         await this.core.authorization.authorizeCommand(
           {
@@ -272,13 +311,6 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
           },
           { signal: active.abort.signal, executionId: request.id },
         );
-      if (
-        request.payload.kind === 'prompt' &&
-        !['openai-codex-cli', 'claude-code-cli', 'google-antigravity-cli'].includes(
-          provider.adapterKey,
-        )
-      )
-        throw new DevBrainError('UNSUPPORTED', 'Adapter does not support prompt execution');
       const resolved = await findExecutable(executable);
       if (!resolved)
         throw new DevBrainError('DEPENDENCY_MISSING', `Executable unavailable: ${executable}`);
@@ -306,9 +338,9 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
         try {
           value = JSON.parse(line) as Record<string, unknown>;
         } catch {
-          if (line.trim()) sawText = true;
           return;
         }
+        if (!value || typeof value !== 'object') return;
         if (
           value.type === 'turn.completed' ||
           (value.type === 'result' && value.is_error === false)
@@ -354,6 +386,51 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
             role: 'assistant',
             text: redactString(item.text).slice(0, 1_048_576),
           });
+        // Claude Code stream-json: assistant text blocks and the final result's token usage.
+        // Its `total_cost_usd` is not recorded: under a subscription it is not a charge, so the
+        // cost stays unknown rather than invented.
+        if (value.type === 'assistant' && value.message && typeof value.message === 'object') {
+          const content = (value.message as Record<string, unknown>).content;
+          if (Array.isArray(content))
+            for (const block of content) {
+              if (
+                block &&
+                typeof block === 'object' &&
+                (block as Record<string, unknown>).type === 'text' &&
+                typeof (block as Record<string, unknown>).text === 'string'
+              )
+                await emit({
+                  type: 'message',
+                  role: 'assistant',
+                  text: redactString((block as { text: string }).text).slice(0, 1_048_576),
+                });
+            }
+        }
+        if (
+          (value.type === 'result' || typeof value.status === 'string') &&
+          value.usage &&
+          typeof value.usage === 'object' &&
+          reportedUsage === null
+        ) {
+          const usage = value.usage as Record<string, unknown>;
+          reportedUsage = {
+            inputTokens: typeof usage.input_tokens === 'number' ? usage.input_tokens : null,
+            outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : null,
+            costAmount: null,
+            costCurrency: null,
+          };
+          await emit({ type: 'usage', usage: reportedUsage });
+        }
+        // Antigravity `--output-format json`: one object with `status` and `response`.
+        if (provider.adapterKey === 'google-antigravity-cli' && typeof value.status === 'string') {
+          terminalSignal = value.status === 'SUCCESS' ? 'success' : 'failure';
+          if (typeof value.response === 'string')
+            await emit({
+              type: 'message',
+              role: 'assistant',
+              text: redactString(value.response).slice(0, 1_048_576),
+            });
+        }
         if (value.type === 'turn.completed' && value.usage && typeof value.usage === 'object') {
           const usage = value.usage as Record<string, unknown>;
           reportedUsage = {
@@ -372,7 +449,13 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
         let pending = '';
         for await (const chunk of stream) {
           const raw = String(chunk);
-          if (label === 'stdout' && request.payload.kind === 'prompt') {
+          if (
+            label === 'stdout' &&
+            request.payload.kind === 'prompt' &&
+            provider.adapterKey === 'google-antigravity-cli'
+          ) {
+            if (documentOutput.length < 8 * 1024 * 1024) documentOutput += raw;
+          } else if (label === 'stdout' && request.payload.kind === 'prompt') {
             pending += raw;
             for (;;) {
               const index = pending.indexOf('\n');
@@ -388,7 +471,9 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
           if (text) await emit({ type: 'output', stream: label, chunk: text });
           if (outputBytes > maxOutput) outputTruncated = true;
         }
-        if (pending.trim()) sawText = true;
+        // A final structured line without a trailing newline.
+        if (pending.trim() && label === 'stdout' && request.payload.kind === 'prompt')
+          await structuredLine(pending);
       };
       timer = setTimeout(
         () => {
@@ -404,6 +489,7 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
       const [code] = (await once(child, 'close')) as [number | null];
       exitCode = code;
       await streams;
+      if (documentOutput.trim()) await structuredLine(documentOutput.trim());
       const after = await this.git.status(auth.workingDirectory).catch(() => null);
       if (after)
         for (const file of after.files) {
@@ -426,10 +512,7 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
                     : 'modified',
             });
         }
-      const validSuccess =
-        request.payload.kind === 'command' ||
-        terminalSignal === 'success' ||
-        (provider.adapterKey === 'google-antigravity-cli' && sawText);
+      const validSuccess = request.payload.kind === 'command' || terminalSignal === 'success';
       const status: ExecutionStatus = timedOut
         ? 'timed-out'
         : active.abort.signal.aborted
