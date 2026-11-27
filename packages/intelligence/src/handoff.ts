@@ -32,7 +32,9 @@ const KIND_RULES: Record<HandoffKind, string> = {
  */
 export class ContextHandoffService {
   build(history: SessionHistory, kind: HandoffKind, now = new Date()): HandoffPacket {
-    const latest = [...history.checkpoints].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    const latest = [...history.checkpoints].sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt),
+    )[0];
     const parsed = latest ? CheckpointStateV1Schema.safeParse(latest.state) : null;
     const state = parsed?.success ? parsed.data : null;
     const files = history.files;
@@ -65,7 +67,9 @@ export class ContextHandoffService {
 
     const errors = history.executions
       .filter((r) => r.result?.error)
-      .map((r) => `${r.request.id}: ${r.result!.error!.code} ${r.result!.error!.message}`.slice(0, 4000))
+      .map((r) =>
+        `${r.request.id}: ${r.result!.error!.code} ${r.result!.error!.message}`.slice(0, 4000),
+      )
       .slice(-100);
     const running = history.executions.some((r) => ACTIVE.has(r.status));
     const completion: HandoffPacket['completion'] =

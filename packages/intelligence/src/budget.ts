@@ -90,8 +90,7 @@ export class BudgetPolicyService {
       ctx.billing.maxCostPerDay === null ? null : toMicros(ctx.billing.maxCostPerDay),
       DAY,
     );
-    if (ctx.project)
-      add('project', ctx.project.projectId, ctx.project.budget.maxPerDayMicros, DAY);
+    if (ctx.project) add('project', ctx.project.projectId, ctx.project.budget.maxPerDayMicros, DAY);
     if (ctx.sessionId)
       add(
         'session',
@@ -129,8 +128,7 @@ export class BudgetPolicyService {
     if (model.pricing.currency.toUpperCase() !== currency.toUpperCase())
       return { micros: null, state: 'unknown', note: `pricing in ${model.pricing.currency}` };
     const output = maxOutputTokens ?? model.capabilities.outputTokens;
-    if (output === null)
-      return { micros: null, state: 'unknown', note: 'no output-token bound' };
+    if (output === null) return { micros: null, state: 'unknown', note: 'no output-token bound' };
     const micros = costMicros(model.pricing, { inputTokens, outputTokens: output });
     return micros === null
       ? { micros: null, state: 'unknown', note: 'pricing incomplete' }
@@ -143,8 +141,7 @@ export class BudgetPolicyService {
 
   evaluate(ctx: BudgetContext, scopes: BudgetScope[], worst: WorstCase): BudgetVerdict {
     const base = { costState: worst.state, worstCaseMicros: worst.micros };
-    if (worst.state === 'free')
-      return { ...base, ok: true, message: worst.note, demands: [] };
+    if (worst.state === 'free') return { ...base, ok: true, message: worst.note, demands: [] };
     if (!this.paidAuthorized(ctx))
       return {
         ...base,
@@ -157,7 +154,8 @@ export class BudgetPolicyService {
     const ceilings = perInference !== null || scopes.some((s) => s.limitMicros !== null);
     if (worst.micros === null) {
       const consented =
-        ctx.billing.allowUnknownCost && (ctx.project ? ctx.project.budget.allowUnboundedCost : true);
+        ctx.billing.allowUnknownCost &&
+        (ctx.project ? ctx.project.budget.allowUnboundedCost : true);
       if (!consented || ceilings)
         return {
           ...base,
@@ -180,7 +178,11 @@ export class BudgetPolicyService {
       };
     for (const scope of scopes) {
       const state = this.ledger.windowState(scope.quotaId);
-      if (state?.remaining !== null && state?.remaining !== undefined && worst.micros > state.remaining)
+      if (
+        state?.remaining !== null &&
+        state?.remaining !== undefined &&
+        worst.micros > state.remaining
+      )
         return {
           ...base,
           ok: false,
@@ -204,18 +206,23 @@ export class BudgetPolicyService {
     use: { [K in keyof TokenUse]?: TokenUse[K] | null },
   ): number | null {
     if (local || isVerifiedFree(model.pricing)) return 0;
-    if (use.inputTokens == null || use.outputTokens == null) return null;
+    if (
+      use.inputTokens === undefined ||
+      use.inputTokens === null ||
+      use.outputTokens === undefined ||
+      use.outputTokens === null
+    )
+      return null;
     return costMicros(model.pricing, {
       inputTokens: use.inputTokens,
       outputTokens: use.outputTokens,
-      ...(use.cachedInputTokens != null ? { cachedInputTokens: use.cachedInputTokens } : {}),
+      ...(typeof use.cachedInputTokens === 'number'
+        ? { cachedInputTokens: use.cachedInputTokens }
+        : {}),
     });
   }
 
-  status(
-    ctx: BudgetContext,
-    unknownCostRequests: (scope: BudgetScope) => number,
-  ): BudgetStatus[] {
+  status(ctx: BudgetContext, unknownCostRequests: (scope: BudgetScope) => number): BudgetStatus[] {
     const currency = this.currency(ctx).toUpperCase();
     return this.scopes(ctx).map((scope) => {
       const w = this.ledger.windowState(scope.quotaId);
@@ -232,4 +239,3 @@ export class BudgetPolicyService {
     });
   }
 }
-

@@ -421,7 +421,7 @@ export const createHandlers = ({
       });
       return run;
     },
-    'ai.benchmark.evidence': (input) =>
+    'ai.benchmark.quality': (input) =>
       g()
         .models()
         .filter((m) => !input.modelId || m.id === input.modelId)

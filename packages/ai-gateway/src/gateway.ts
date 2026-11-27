@@ -367,7 +367,10 @@ export class AiGateway {
   }
 
   /** DevBrain-enforced budget state for every configured billing policy + project/session. */
-  budgetStatus(input: { projectId?: string | undefined; sessionId?: string | undefined }): BudgetStatus[] {
+  budgetStatus(input: {
+    projectId?: string | undefined;
+    sessionId?: string | undefined;
+  }): BudgetStatus[] {
     const project = input.projectId
       ? this.intelligence.projectPolicyOrDefault(input.projectId)
       : null;

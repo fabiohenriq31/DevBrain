@@ -66,11 +66,51 @@ export type Preset = NonNullable<RoutingPolicy['preset']>;
 type Weights = Record<Exclude<keyof ScoreComponents, 'exploration'>, number>;
 
 const PRESET_WEIGHTS: Record<Exclude<Preset, 'custom'>, Weights> = {
-  'free-only': { specialty: 0.15, quality: 0.3, reliability: 0.2, latency: 0.1, cost: 0, quota: 0.15, continuity: 0.1 },
-  'local-only': { specialty: 0.15, quality: 0.35, reliability: 0.2, latency: 0.15, cost: 0, quota: 0.05, continuity: 0.1 },
-  economy: { specialty: 0.1, quality: 0.15, reliability: 0.15, latency: 0.05, cost: 0.4, quota: 0.1, continuity: 0.05 },
-  balanced: { specialty: 0.15, quality: 0.25, reliability: 0.15, latency: 0.1, cost: 0.15, quota: 0.1, continuity: 0.1 },
-  quality: { specialty: 0.15, quality: 0.45, reliability: 0.2, latency: 0.05, cost: 0.02, quota: 0.05, continuity: 0.08 },
+  'free-only': {
+    specialty: 0.15,
+    quality: 0.3,
+    reliability: 0.2,
+    latency: 0.1,
+    cost: 0,
+    quota: 0.15,
+    continuity: 0.1,
+  },
+  'local-only': {
+    specialty: 0.15,
+    quality: 0.35,
+    reliability: 0.2,
+    latency: 0.15,
+    cost: 0,
+    quota: 0.05,
+    continuity: 0.1,
+  },
+  economy: {
+    specialty: 0.1,
+    quality: 0.15,
+    reliability: 0.15,
+    latency: 0.05,
+    cost: 0.4,
+    quota: 0.1,
+    continuity: 0.05,
+  },
+  balanced: {
+    specialty: 0.15,
+    quality: 0.25,
+    reliability: 0.15,
+    latency: 0.1,
+    cost: 0.15,
+    quota: 0.1,
+    continuity: 0.1,
+  },
+  quality: {
+    specialty: 0.15,
+    quality: 0.45,
+    reliability: 0.2,
+    latency: 0.05,
+    cost: 0.02,
+    quota: 0.05,
+    continuity: 0.08,
+  },
 };
 
 export const weightsFor = (policy: Pick<RoutingPolicy, 'preset' | 'weights'>): Weights => {

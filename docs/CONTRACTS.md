@@ -136,6 +136,26 @@ com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
 
+### 0.7.0 (Fase 02, inteligência de recursos — Claude)
+
+Somente aditiva (MINOR). Namespace IPC `devbrain:v1` mantido.
+
+- Novos módulos `entities/task.ts` (`TaskKind` com 12 especialidades, `QualityTier`,
+  `TaskPriority`, `TaskProfile`) e `entities/intelligence.ts` (classe de privacidade do
+  projeto, `ProviderPrivacyProfile` com todos os fatos `unknown` por padrão,
+  `ProjectAiPolicy`, `ExplainedRoutingDecision`, `ExclusionCode`, `CostState`,
+  `CostRecord`, `BudgetStatus`, `QuotaForecast`, `SideEffect`, `HandoffPacket`,
+  `ContextOptimizationReport`, `BenchmarkRun`, `ModelEvidence`).
+- Dinheiro sempre em **micros inteiros** (1 unidade = 1.000.000 micros); nunca float.
+- `PricingDefinition.contextTiers?` (preço por faixa de contexto), `QuotaScope` ganha
+  `global` e `session`, `QuotaDefinition.origin?` (`provider` | `devbrain`),
+  `RoutingPolicy.preset?`/`weights?`/`allowExploration?`, `InferenceRequest.projectId?` e
+  `task?`.
+- 13 canais: `ai.projectPolicy.get/save`, `ai.privacyProfiles.list/save`,
+  `ai.routes.explain`, `ai.cost.get`, `ai.budget.status`, `ai.quota.forecast`,
+  `ai.benchmark.suites/run/quality`, `ai.context.preview`, `ai.handoff.build`.
+  `ai.routes.select` (0.5.0) passa a ter handler.
+
 ### 0.6.0 (Fase 02, adições de integração)
 
 - `ProviderCatalogEntry.documentationUrl` aceita `null` para entradas descobertas sem

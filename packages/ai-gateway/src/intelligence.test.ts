@@ -43,15 +43,18 @@ const upstream = async (respond: RequestListener): Promise<Upstream> => {
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 };
-const ok = (content: string, usage = { prompt_tokens: 10, completion_tokens: 5 }): RequestListener =>
+const ok =
+  (content: string, usage = { prompt_tokens: 10, completion_tokens: 5 }): RequestListener =>
   (_req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }], usage }));
   };
-const status = (code: number): RequestListener => (_req, res) => {
-  res.writeHead(code, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ error: { code: 'x' } }));
-};
+const status =
+  (code: number): RequestListener =>
+  (_req, res) => {
+    res.writeHead(code, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: { code: 'x' } }));
+  };
 
 const VERIFIED = '2026-11-27T00:00:00.000Z';
 const model = (
@@ -186,7 +189,14 @@ describe('budget enforcement in the gateway', () => {
     const paid = await upstream(ok('paid'));
     try {
       const gateway = new AiGateway(db().driver, async () => '');
-      setup(gateway, [{ id: 'paid', url: paid.url, provider: 'ppx', model: model('mx', 'ppx', { input: 1, output: 2 }) }]);
+      setup(gateway, [
+        {
+          id: 'paid',
+          url: paid.url,
+          provider: 'ppx',
+          model: model('mx', 'ppx', { input: 1, output: 2 }),
+        },
+      ]);
       await expect(gateway.infer(req())).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
       expect(paid.hits()).toBe(0);
       const decision = gateway.explain(req());
@@ -202,8 +212,18 @@ describe('budget enforcement in the gateway', () => {
     try {
       const gateway = new AiGateway(db().driver, async () => '');
       setup(gateway, [
-        { id: 'free', url: free.url, provider: 'ffx', model: model('mfx', 'ffx', { input: 0, output: 0 }) },
-        { id: 'paid', url: paid.url, provider: 'ppx', model: model('mpx', 'ppx', { input: 1, output: 2 }) },
+        {
+          id: 'free',
+          url: free.url,
+          provider: 'ffx',
+          model: model('mfx', 'ffx', { input: 0, output: 0 }),
+        },
+        {
+          id: 'paid',
+          url: paid.url,
+          provider: 'ppx',
+          model: model('mpx', 'ppx', { input: 1, output: 2 }),
+        },
       ]);
       await expect(gateway.infer(req())).rejects.toBeDefined();
       expect(free.hits()).toBe(1);
@@ -220,7 +240,14 @@ describe('budget enforcement in the gateway', () => {
       const gateway = new AiGateway(db().driver, async () => '');
       setup(
         gateway,
-        [{ id: 'paid', url: paid.url, provider: 'ppx', model: model('mx', 'ppx', { input: 3, output: 15 }) }],
+        [
+          {
+            id: 'paid',
+            url: paid.url,
+            provider: 'ppx',
+            model: model('mx', 'ppx', { input: 3, output: 15 }),
+          },
+        ],
         { billing: { allowPaid: true, maxCostPerDay: 1 } },
       );
       const result = await gateway.infer(req());
@@ -232,7 +259,11 @@ describe('budget enforcement in the gateway', () => {
       expect(cost!.estimatedMicros).toBeGreaterThan(0);
       expect(result.usage?.cost).toBeCloseTo(0.0105, 10);
       const [global] = gateway.budgetStatus({});
-      expect(global).toMatchObject({ committedMicros: 10_500, reservedMicros: 0, enforcedBy: 'devbrain' });
+      expect(global).toMatchObject({
+        committedMicros: 10_500,
+        reservedMicros: 0,
+        enforcedBy: 'devbrain',
+      });
     } finally {
       await paid.close();
     }
@@ -249,7 +280,14 @@ describe('budget enforcement in the gateway', () => {
       // Worst case per call ≈ (input + 100 output) × $100/M ≈ 0.011 → ceiling $0.015 fits one.
       setup(
         gateway,
-        [{ id: 'paid', url: slow.url, provider: 'ppx', model: model('mx', 'ppx', { input: 100, output: 100 }) }],
+        [
+          {
+            id: 'paid',
+            url: slow.url,
+            provider: 'ppx',
+            model: model('mx', 'ppx', { input: 100, output: 100 }),
+          },
+        ],
         { billing: { allowPaid: true, maxCostPerDay: 0.015 } },
       );
       const a = gateway.infer(req());
@@ -287,12 +325,22 @@ describe('budget enforcement in the gateway', () => {
       const gateway = new AiGateway(db().driver, async () => '');
       setup(
         gateway,
-        [{ id: 'paid', url: broken.url, provider: 'ppx', model: model('mx', 'ppx', { input: 1, output: 1 }) }],
+        [
+          {
+            id: 'paid',
+            url: broken.url,
+            provider: 'ppx',
+            model: model('mx', 'ppx', { input: 1, output: 1 }),
+          },
+        ],
         { billing: { allowPaid: true, maxCostPerDay: 1 }, policy: { maxAttempts: 1 } },
       );
       const request = req();
       await expect(gateway.infer(request)).rejects.toBeDefined();
-      expect(gateway.intelligence.cost(request.id)).toMatchObject({ state: 'unknown', reconciledMicros: null });
+      expect(gateway.intelligence.cost(request.id)).toMatchObject({
+        state: 'unknown',
+        reconciledMicros: null,
+      });
       const [global] = gateway.budgetStatus({});
       expect(global!.committedMicros).toBeGreaterThan(0);
     } finally {
@@ -304,9 +352,13 @@ describe('budget enforcement in the gateway', () => {
     const fake = await upstream(ok('x'));
     try {
       const gateway = new AiGateway(db().driver, async () => '');
-      setup(gateway, [{ id: 'fake', url: fake.url, provider: 'ppx', model: model('mx', 'ppx', 'unverified') }], {
-        policy: { preset: 'free-only' },
-      });
+      setup(
+        gateway,
+        [{ id: 'fake', url: fake.url, provider: 'ppx', model: model('mx', 'ppx', 'unverified') }],
+        {
+          policy: { preset: 'free-only' },
+        },
+      );
       const codes = gateway.explain(req()).excluded[0]?.reasons.map((r) => r.code);
       expect(codes).toContain('paid-not-authorized');
       expect(fake.hits()).toBe(0);
@@ -323,8 +375,20 @@ describe('privacy and project policy in the gateway', () => {
     try {
       const gateway = new AiGateway(db().driver, async () => '');
       setup(gateway, [
-        { id: 'ext', url: external.url, provider: 'cloud', model: model('cloud-m', 'cloud', { input: 0, output: 0 }) },
-        { id: 'loc', url: local.url, provider: 'ollama', model: model('local-m', 'ollama', null), local: true, priority: 5 },
+        {
+          id: 'ext',
+          url: external.url,
+          provider: 'cloud',
+          model: model('cloud-m', 'cloud', { input: 0, output: 0 }),
+        },
+        {
+          id: 'loc',
+          url: local.url,
+          provider: 'ollama',
+          model: model('local-m', 'ollama', null),
+          local: true,
+          priority: 5,
+        },
       ]);
       gateway.intelligence.saveProjectPolicy({
         projectId: PROJECT,
@@ -356,8 +420,17 @@ describe('privacy and project policy in the gateway', () => {
     const external = await upstream(ok('external'));
     try {
       const gateway = new AiGateway(db().driver, async () => '');
-      setup(gateway, [{ id: 'ext', url: external.url, provider: 'cloud', model: model('mmx', 'cloud', { input: 0, output: 0 }) }]);
-      await expect(gateway.infer(req({ projectId: PROJECT }))).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+      setup(gateway, [
+        {
+          id: 'ext',
+          url: external.url,
+          provider: 'cloud',
+          model: model('mmx', 'cloud', { input: 0, output: 0 }),
+        },
+      ]);
+      await expect(gateway.infer(req({ projectId: PROJECT }))).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+      });
       expect(external.hits()).toBe(0);
       // Verified no-training facts make it eligible, without approving the provider.
       gateway.intelligence.savePrivacyProfile({
@@ -387,8 +460,18 @@ describe('privacy and project policy in the gateway', () => {
     try {
       const gateway = new AiGateway(db().driver, async () => '');
       setup(gateway, [
-        { id: 'approved', url: approved.url, provider: 'good', model: model('g-model', 'good', { input: 0, output: 0 }) },
-        { id: 'other', url: other.url, provider: 'other', model: model('o-model', 'other', { input: 0, output: 0 }) },
+        {
+          id: 'approved',
+          url: approved.url,
+          provider: 'good',
+          model: model('g-model', 'good', { input: 0, output: 0 }),
+        },
+        {
+          id: 'other',
+          url: other.url,
+          provider: 'other',
+          model: model('o-model', 'other', { input: 0, output: 0 }),
+        },
       ]);
       gateway.intelligence.saveProjectPolicy({
         projectId: PROJECT,
@@ -419,8 +502,19 @@ describe('routing behaviour', () => {
     try {
       const gateway = new AiGateway(db().driver, async () => '');
       setup(gateway, [
-        { id: 'ext', url: local.url, provider: 'cloud', model: model('cloud-model', 'cloud', { input: 0, output: 0 }) },
-        { id: 'loc', url: local.url, provider: 'ollama', model: model('l-model', 'ollama', null), local: true },
+        {
+          id: 'ext',
+          url: local.url,
+          provider: 'cloud',
+          model: model('cloud-model', 'cloud', { input: 0, output: 0 }),
+        },
+        {
+          id: 'loc',
+          url: local.url,
+          provider: 'ollama',
+          model: model('l-model', 'ollama', null),
+          local: true,
+        },
       ]);
       gateway.saveConnection({
         id: 'connection-ext',
@@ -447,8 +541,18 @@ describe('routing behaviour', () => {
       setup(
         gateway,
         [
-          { id: 'strong', url: strong.url, provider: 'ssx', model: model('ssxx', 'ssx', { input: 30, output: 60 }, { reasoning: true }) },
-          { id: 'weak', url: weak.url, provider: 'wwx', model: model('wwxx', 'wwx', { input: 0, output: 0 }) },
+          {
+            id: 'strong',
+            url: strong.url,
+            provider: 'ssx',
+            model: model('ssxx', 'ssx', { input: 30, output: 60 }, { reasoning: true }),
+          },
+          {
+            id: 'weak',
+            url: weak.url,
+            provider: 'wwx',
+            model: model('wwxx', 'wwx', { input: 0, output: 0 }),
+          },
         ],
         { policy: { preset: 'quality' } },
       );
@@ -467,10 +571,28 @@ describe('routing behaviour', () => {
     try {
       const gateway = new AiGateway(db().driver, async () => '');
       setup(gateway, [
-        { id: 'small', url: small.url, provider: 'xxx', model: model('smallx', 'xxx', { input: 0, output: 0 }, { tools: false, contextTokens: 8000 }) },
+        {
+          id: 'small',
+          url: small.url,
+          provider: 'xxx',
+          model: model(
+            'smallx',
+            'xxx',
+            { input: 0, output: 0 },
+            { tools: false, contextTokens: 8000 },
+          ),
+        },
       ]);
       const decision = gateway.explain(
-        req({ task: { kind: 'architecture', priority: 'normal', requiresTools: false, requiresStructuredOutput: false, requiresReasoning: false } }),
+        req({
+          task: {
+            kind: 'architecture',
+            priority: 'normal',
+            requiresTools: false,
+            requiresStructuredOutput: false,
+            requiresReasoning: false,
+          },
+        }),
       );
       expect(decision.minQualityTier).toBe('advanced');
       expect(decision.excluded[0]?.reasons.map((r) => r.code)).toContain('quality-below-minimum');
@@ -487,8 +609,18 @@ describe('routing behaviour', () => {
     try {
       const gateway = new AiGateway(db().driver, async () => '');
       setup(gateway, [
-        { id: 'key1', url: limited.url, provider: 'same', model: model('m1', 'same', { input: 0, output: 0 }) },
-        { id: 'key2', url: secondKey.url, provider: 'same', model: model('m2', 'same', { input: 0, output: 0 }) },
+        {
+          id: 'key1',
+          url: limited.url,
+          provider: 'same',
+          model: model('m1', 'same', { input: 0, output: 0 }),
+        },
+        {
+          id: 'key2',
+          url: secondKey.url,
+          provider: 'same',
+          model: model('m2', 'same', { input: 0, output: 0 }),
+        },
       ]);
       await expect(gateway.infer(req())).rejects.toBeDefined();
       expect(secondKey.hits()).toBe(0);
@@ -504,7 +636,14 @@ describe('routing behaviour', () => {
     const up = await upstream(ok('x'));
     try {
       const gateway = new AiGateway(db().driver, async () => '');
-      setup(gateway, [{ id: 'rrx', url: up.url, provider: 'ppx', model: model('mx', 'ppx', { input: 0, output: 0 }) }]);
+      setup(gateway, [
+        {
+          id: 'rrx',
+          url: up.url,
+          provider: 'ppx',
+          model: model('mx', 'ppx', { input: 0, output: 0 }),
+        },
+      ]);
       gateway.ledger.define({
         id: 'rpm',
         scope: 'provider',
@@ -528,7 +667,14 @@ describe('routing behaviour', () => {
     const up = await upstream(ok('x'));
     try {
       const gateway = new AiGateway(db().driver, async () => '');
-      setup(gateway, [{ id: 'rrx', url: up.url, provider: 'ppx', model: model('mx', 'ppx', { input: 0, output: 0 }) }]);
+      setup(gateway, [
+        {
+          id: 'rrx',
+          url: up.url,
+          provider: 'ppx',
+          model: model('mx', 'ppx', { input: 0, output: 0 }),
+        },
+      ]);
       gateway.ledger.define({
         id: 'tpm',
         scope: 'provider',
@@ -566,7 +712,9 @@ describe('local gateway server and transport hardening', () => {
       const port = Number(new URL(server.baseUrl).port);
       const auth = { authorization: `Bearer ${server.token}` };
       expect(await raw(port, { ...auth, host: 'attacker.example:80' })).toBe(403);
-      expect(await raw(port, { ...auth, host: `127.0.0.1:${port}`, origin: 'https://evil.example' })).toBe(403);
+      expect(
+        await raw(port, { ...auth, host: `127.0.0.1:${port}`, origin: 'https://evil.example' }),
+      ).toBe(403);
       expect(await raw(port, { ...auth, host: `127.0.0.1:${port}` })).toBe(200);
     } finally {
       await server.close();

@@ -137,3 +137,52 @@ Mudanças em arquivos de outros donos, todas revisáveis no PR de consolidação
 | `scripts/verify-real-agent.mjs` (Codex) | Verificação real parametrizada por adaptador | Validação externa |
 
 Contratos: **0.4.0** (aditivo; ver CONTRACTS.md).
+
+## Fase 02 — inteligência (`phase-02/claude-intelligence`)
+
+Base: commit do gateway do Codex `4b21b98`. A branch do Antigravity foi apenas
+consultada; nada dela foi incorporado.
+
+### Para o Codex (gateway)
+
+- **Mudanças feitas no gateway** (ponto de seleção previsto em ADR-0022):
+  `DeterministicRouter` removido; `AiGateway` recebe `clock` como 4º parâmetro do
+  construtor e expõe `engine` (`RoutingPolicyEngine`), `intelligence`
+  (`IntelligenceStore`), `explain`, `budgetStatus`, `modelEvidence` e `runBenchmark`.
+  Cada tentativa é reavaliada; falha de admissão (`QUOTA_EXCEEDED` no `reserveAll`) não
+  aplica cooldown nem conta tentativa. 429/cota aplica cooldown a **todas** as rotas do
+  mesmo provedor. `usage.cost` agora é preenchido quando o preço é verificado.
+- **Ledger:** novo método somente leitura `QuotaLedger.windowState(quotaId)`.
+  A demanda de cota por tokens de entrada deixou de ser 0 (estimativa conservadora).
+- **Teste alterado:** `gateway.test.ts` › "uses the next free route when the first shared
+  quota is exhausted" agora espera 0 tentativas (a rota é excluída no estágio 1) e
+  verifica a explicação.
+- **Segurança:** `LocalGatewayServer` rejeita `Host` diferente de `127.0.0.1:<porta>`/
+  `localhost:<porta>` e qualquer cabeçalho `Origin`; aceita `context` (projeto/sessão).
+  `SafeHttpTransport` passa a recusar IPv6 6to4 (`2002::/16`) e Teredo (`2001:0::/32`).
+- **Pendências que continuam com o Codex (dependências, não feitas aqui):** ≥ 20
+  conexões específicas validadas; OpenCode ligado ao gateway (usar
+  `new LocalGatewayServer(gateway, policyId, { projectId, sessionId })` por execução);
+  descoberta e atualização de catálogo; validação com 2 provedores externos reais;
+  runtimes locais reais; leitura do custo reportado pelo provedor (`reportedMicros`) e
+  de cabeçalhos de cota (`ai.quota.observations` ainda retorna `[]`).
+
+### Para o Antigravity (UI)
+
+- A elegibilidade calculada no renderer (`evaluateProviderEligibility`) e
+  `prefs.projectPrivacy` em `localStorage` **não** decidem nada. Use:
+  `ai.projectPolicy.get/save` (classe, provedores aprovados, orçamento),
+  `ai.privacyProfiles.list/save` (fatos verificados pelo usuário),
+  `ai.routes.explain` (ranking + motivos de exclusão para exibir),
+  `ai.budget.status`, `ai.cost.get`, `ai.quota.forecast`, `ai.benchmark.*` (`quality` = evidência medida, somente leitura),
+  `ai.context.preview`, `ai.handoff.build`.
+- Toda requisição de inferência originada de um projeto deve enviar `projectId`.
+- Estimativas devem aparecer como estimativas (`resetBasis`, `projectionBasis`,
+  `costState`), e `BudgetStatus.enforcedBy` é sempre `devbrain` (não é limite do
+  provedor).
+- Conflito de numeração: ADR-0022 existe nas duas branches.
+
+### Migração
+
+- `004 phase-02-intelligence` (somente acréscimo): `ai_project_policies`,
+  `ai_privacy_profiles`, `ai_routing_decisions`, `ai_cost_records`, `ai_benchmark_runs`.

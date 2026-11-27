@@ -43,3 +43,42 @@ em memória e bind exclusivo em `127.0.0.1`, mas seu ciclo de vida e configuraç
 OpenCode ainda não estão ligados ao serviço de execução. Os canais de benchmark, seleção avançada e checkpoint pertencem ao bloco
 Claude ou respondem `UNSUPPORTED` até implementação. A interface visual pertence ao
 bloco Antigravity.
+
+## Inteligência de recursos (Claude, `phase-02/claude-intelligence`)
+
+Pacote `@devbrain/intelligence` (políticas puras) + aplicação no gateway antes de cada
+inferência e de cada fallback. Ver ADR-0023 a ADR-0026.
+
+| Serviço | Arquivo | O que faz de verdade |
+| --- | --- | --- |
+| RoutingPolicyEngine | `router.ts` | Dois estágios, presets `free-only`/`local-only`/`economy`/`balanced`/`quality`/`custom`, explicação persistida |
+| ModelScoringService | `scoring.ts` | Pontuação determinística; limite inferior de Wilson; confiança por tamanho de amostra |
+| QuotaPolicyEngine | `quota-policy.ts` | Cotas compartilhadas, reserva por prioridade, ritmo para tarefas de baixa prioridade, previsão rotulada, cooldown por provedor |
+| BudgetPolicyService | `budget.ts` | Micros inteiros, pior caso, tetos global/projeto/sessão/inferência, reserva atômica |
+| PrivacyPolicyService | `privacy.ts` | Classe do projeto × fatos verificados; desconhecido = conservador |
+| ContextOptimizer | `context.ts` | Dedup, compactação de log, referências com escopo, manifesto de omissões |
+| ContextHandoffService | `handoff.ts` | Pacote estruturado a partir do checkpoint v1; reconciliação de efeitos colaterais |
+| BenchmarkEngine | `benchmark.ts` | Suíte `devbrain-core@1.0.0` (8 casos, 7 categorias) com avaliadores objetivos |
+
+### Economia de contexto medida
+
+`node scripts/measure-context.mjs` (estimador conservador; mede tokens, não qualidade
+da resposta):
+
+| fixture | original | otimizado | redução | orçamento |
+| --- | ---: | ---: | ---: | ---: |
+| F1 build com falha (log repetido 2×) | 7295 | 696 | 90,5% | 100000 |
+| F2 histórico longo (40 turnos) | 8203 | 3824 | 53,4% | 4000 |
+| F3 três arquivos grandes anexados | 28053 | 591 | 97,9% | 3000 |
+| F4 pequeno, sem desperdício | 53 | 53 | 0,0% | 100000 |
+
+São fixtures sintéticas: os números variam com o conteúdo real e não são promessa de
+economia.
+
+### Benchmark
+
+Não há runtime local (Ollama) nesta máquina e APIs pagas não foram usadas. Portanto
+**não existe resultado de modelo**. Foram executados: os avaliadores com respostas
+conhecidas (certas e erradas), o isolamento do avaliador de código (escrita em disco,
+processo filho e laço infinito bloqueados) e um autoteste do motor com executor
+roteirizado, rotulado como tal.

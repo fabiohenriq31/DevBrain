@@ -113,11 +113,19 @@ export class RoutingPolicyEngine {
       if (!c.route.enabled || !c.connection.enabled || c.connection.status !== 'ready')
         why('unavailable', `route/connection not ready (${c.connection.status})`);
       const cooldown = ctx.cooldowns.get(c.route.id);
-      if (cooldown && Date.parse(cooldown) > now()) why('cooldown', `cooling down until ${cooldown}`);
+      if (cooldown && Date.parse(cooldown) > now())
+        why('cooldown', `cooling down until ${cooldown}`);
       const url = new URL(c.endpoint.baseUrl);
-      if (url.username || url.password || (url.protocol !== 'https:' && !LOOPBACK.has(url.hostname)))
+      if (
+        url.username ||
+        url.password ||
+        (url.protocol !== 'https:' && !LOOPBACK.has(url.hostname))
+      )
         why('security', 'endpoint must be HTTPS (or loopback) without embedded credentials');
-      if (!c.model.capabilities.input.includes('text') || !c.model.capabilities.output.includes('text'))
+      if (
+        !c.model.capabilities.input.includes('text') ||
+        !c.model.capabilities.output.includes('text')
+      )
         why('protocol', 'model does not accept and produce text');
       if (ctx.request.stream && !c.model.capabilities.streaming)
         why('protocol', 'streaming requested but not supported');
@@ -130,7 +138,10 @@ export class RoutingPolicyEngine {
       const outputBound = ctx.request.maxOutputTokens ?? c.model.capabilities.outputTokens ?? 0;
       const window = c.model.capabilities.contextTokens;
       if (window !== null && estimate.tokens + outputBound > window)
-        why('context-too-small', `needs ~${estimate.tokens + outputBound} tokens, window ${window}`);
+        why(
+          'context-too-small',
+          `needs ~${estimate.tokens + outputBound} tokens, window ${window}`,
+        );
 
       const privacy = this.privacyService.evaluate({
         route: c.route,
@@ -140,7 +151,8 @@ export class RoutingPolicyEngine {
         profile: ctx.profiles.get(c.endpoint.providerId) ?? null,
       });
       if (!privacy.allowed) why('privacy', privacy.reason);
-      if (preset === 'local-only' && !local) why('privacy', 'preset local-only: no external egress');
+      if (preset === 'local-only' && !local)
+        why('privacy', 'preset local-only: no external egress');
 
       const evidence = ctx.evidence?.(c.model.id) ?? buildEvidence(c.model.id, null, null);
       const tier = assessTier(c.model, evidence);
@@ -220,7 +232,9 @@ export class RoutingPolicyEngine {
     const firstFree = ranked[0]?.costState === 'free';
     for (const r of ranked.slice(1))
       if (firstFree && r.costState !== 'free')
-        r.notes.push('paid fallback after a free primary: allowed only by explicit paid authorization');
+        r.notes.push(
+          'paid fallback after a free primary: allowed only by explicit paid authorization',
+        );
 
     const decision: ExplainedRoutingDecision = {
       requestId: ctx.request.id,

@@ -191,7 +191,9 @@ export class IntelligenceStore {
     return {
       samples,
       successes: done.length,
-      latenciesMs: done.map((r) => Math.max(0, Date.parse(r.updated_at) - Date.parse(r.created_at))),
+      latenciesMs: done.map((r) =>
+        Math.max(0, Date.parse(r.updated_at) - Date.parse(r.created_at)),
+      ),
     };
   }
 

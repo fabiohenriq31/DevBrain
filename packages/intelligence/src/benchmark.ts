@@ -91,15 +91,24 @@ export const CORE_SUITE: BenchmarkSuite = {
       category: 'instruction-following',
       messages: user('Reply with exactly the word ACK in uppercase and nothing else.'),
       maxOutputTokens: 16,
-      grade: (o) => ({ passed: o.trim() === 'ACK', detail: `got ${JSON.stringify(o.trim().slice(0, 40))}` }),
+      grade: (o) => ({
+        passed: o.trim() === 'ACK',
+        detail: `got ${JSON.stringify(o.trim().slice(0, 40))}`,
+      }),
     },
     {
       id: 'if-three-lines',
       category: 'instruction-following',
-      messages: user('List exactly three colors, one per line, lowercase, no numbering, no punctuation, nothing else.'),
+      messages: user(
+        'List exactly three colors, one per line, lowercase, no numbering, no punctuation, nothing else.',
+      ),
       maxOutputTokens: 40,
       grade: (o) => {
-        const lines = o.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        const lines = o
+          .trim()
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
         const ok = lines.length === 3 && lines.every((l) => /^[a-z]+( [a-z]+)?$/.test(l));
         return { passed: ok, detail: `${lines.length} line(s)` };
       },
@@ -112,10 +121,19 @@ export const CORE_SUITE: BenchmarkSuite = {
       ),
       maxOutputTokens: 80,
       grade: (o) => {
-        const schema = z.object({ name: z.literal('Ada'), year: z.literal(1815), tags: z.tuple([z.literal('math'), z.literal('code')]) }).strict();
+        const schema = z
+          .object({
+            name: z.literal('Ada'),
+            year: z.literal(1815),
+            tags: z.tuple([z.literal('math'), z.literal('code')]),
+          })
+          .strict();
         try {
           const r = schema.safeParse(extractJson(o));
-          return { passed: r.success, detail: r.success ? 'schema ok' : r.error.issues[0]?.message ?? 'invalid' };
+          return {
+            passed: r.success,
+            detail: r.success ? 'schema ok' : (r.error.issues[0]?.message ?? 'invalid'),
+          };
         } catch {
           return { passed: false, detail: 'not JSON' };
         }
@@ -130,8 +148,17 @@ export const CORE_SUITE: BenchmarkSuite = {
       maxOutputTokens: 60,
       grade: (o) => {
         try {
-          const r = z.object({ tool: z.literal('read_file'), arguments: z.object({ path: z.literal('src/index.ts') }).strict() }).strict().safeParse(extractJson(o));
-          return { passed: r.success, detail: r.success ? 'textual tool call ok (not native tool API)' : 'wrong shape' };
+          const r = z
+            .object({
+              tool: z.literal('read_file'),
+              arguments: z.object({ path: z.literal('src/index.ts') }).strict(),
+            })
+            .strict()
+            .safeParse(extractJson(o));
+          return {
+            passed: r.success,
+            detail: r.success ? 'textual tool call ok (not native tool API)' : 'wrong shape',
+          };
         } catch {
           return { passed: false, detail: 'not JSON' };
         }
@@ -147,7 +174,10 @@ export const CORE_SUITE: BenchmarkSuite = {
       grade: async (o) => {
         const code = `${extractCode(o)}\nconst assert = require('node:assert');\nassert.strictEqual(sumRange(1, 3), 6);\nassert.strictEqual(sumRange(5, 5), 5);\nassert.strictEqual(sumRange(-2, 2), 0);`;
         const r = await runSandboxedJs(code);
-        return { passed: r.ok, detail: r.ok ? 'tests passed' : r.output.split('\n')[0] ?? 'failed' };
+        return {
+          passed: r.ok,
+          detail: r.ok ? 'tests passed' : (r.output.split('\n')[0] ?? 'failed'),
+        };
       },
     },
     {
@@ -159,12 +189,16 @@ export const CORE_SUITE: BenchmarkSuite = {
       maxOutputTokens: 300,
       grade: async (o) => {
         const tests = extractCode(o);
-        const good = 'const isPrime = (n) => { if (n < 2) return false; for (let i = 2; i * i <= n; i++) if (n % i === 0) return false; return true; };';
+        const good =
+          'const isPrime = (n) => { if (n < 2) return false; for (let i = 2; i * i <= n; i++) if (n % i === 0) return false; return true; };';
         const mutant = 'const isPrime = (n) => n > 1 && n % 2 === 1;';
         const pass = await runSandboxedJs(`${tests}\n${good}\ncheck(isPrime);`);
         if (!pass.ok) return { passed: false, detail: 'tests reject the correct implementation' };
         const kill = await runSandboxedJs(`${tests}\n${mutant}\ncheck(isPrime);`);
-        return { passed: !kill.ok, detail: kill.ok ? 'tests miss the mutant (9 / 2)' : 'catches mutant' };
+        return {
+          passed: !kill.ok,
+          detail: kill.ok ? 'tests miss the mutant (9 / 2)' : 'catches mutant',
+        };
       },
     },
     {
@@ -175,9 +209,13 @@ export const CORE_SUITE: BenchmarkSuite = {
       ),
       maxOutputTokens: 200,
       grade: (o) => {
-        const expected = '// counter utilities\nexport function bump(count) {\n  // keep this comment\n  return count + 1; // +1\n}\nexport const ZERO = 0;';
+        const expected =
+          '// counter utilities\nexport function bump(count) {\n  // keep this comment\n  return count + 1; // +1\n}\nexport const ZERO = 0;';
         const got = extractCode(o).replace(/\r\n/g, '\n').trim();
-        return { passed: got === expected, detail: got === expected ? 'exact' : 'differs from expected' };
+        return {
+          passed: got === expected,
+          detail: got === expected ? 'exact' : 'differs from expected',
+        };
       },
     },
     {
@@ -187,7 +225,10 @@ export const CORE_SUITE: BenchmarkSuite = {
         `${NEEDLE_FILLER.slice(0, NEEDLE_FILLER.length / 2)}\nThe deployment code word is VERMILLION-42.\n${NEEDLE_FILLER.slice(NEEDLE_FILLER.length / 2)}\n\nWhat is the deployment code word? Answer with the code word only.`,
       ),
       maxOutputTokens: 20,
-      grade: (o) => ({ passed: o.trim().replace(/[.`'"]/g, '') === 'VERMILLION-42', detail: o.trim().slice(0, 40) }),
+      grade: (o) => ({
+        passed: o.trim().replace(/[.`'"]/g, '') === 'VERMILLION-42',
+        detail: o.trim().slice(0, 40),
+      }),
     },
   ],
 };
@@ -228,7 +269,10 @@ export class BenchmarkEngine {
           caseId: c.id,
           category: c.category,
           passed: false,
-          detail: `execution failed: ${error instanceof Error ? error.message : 'unknown'}`.slice(0, 2000),
+          detail: `execution failed: ${error instanceof Error ? error.message : 'unknown'}`.slice(
+            0,
+            2000,
+          ),
           latencyMs: null,
           inputTokens: null,
           outputTokens: null,

@@ -612,10 +612,10 @@ export const IPC_CHANNELS = {
     I.BenchmarkRunSchema,
     'Run a suite against one route through the policy-enforcing gateway.',
   ),
-  'ai.benchmark.evidence': channel(
+  'ai.benchmark.quality': channel(
     z.object({ modelId: R.AiResourceIdSchema.optional() }),
     z.array(I.ModelEvidenceSchema),
-    'Evidence-based quality per model with sample sizes.',
+    'Measured quality per model (read-only, computed in main) with sample sizes.',
   ),
   'ai.context.preview': channel(
     z.object({
