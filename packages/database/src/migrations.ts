@@ -3,6 +3,7 @@ import { DevBrainError } from '@devbrain/contracts';
 import type { SqlDriver } from './driver.js';
 import { MIGRATION_002 } from './migration-002.js';
 import { MIGRATION_003 } from './migration-003.js';
+import { MIGRATION_004 } from './migration-004.js';
 
 /**
  * Forward-only, append-only migrations. Rules:
@@ -153,6 +154,7 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   { id: 2, name: 'phase-01-core', sql: MIGRATION_002 },
   { id: 3, name: 'phase-02-ai-resources', sql: MIGRATION_003 },
+  { id: 4, name: 'phase-02-intelligence', sql: MIGRATION_004 },
 ];
 
 const checksum = (sql: string): string =>

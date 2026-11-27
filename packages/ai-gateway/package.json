@@ -20,6 +20,7 @@
   "dependencies": {
     "@devbrain/contracts": "workspace:*",
     "@devbrain/database": "workspace:*",
+    "@devbrain/intelligence": "workspace:*",
     "zod": "4.6.7"
   }
 }

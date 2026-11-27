@@ -55,6 +55,9 @@ importers:
       '@devbrain/git-engine':
         specifier: workspace:*
         version: link:../../packages/git-engine
+      '@devbrain/intelligence':
+        specifier: workspace:*
+        version: link:../../packages/intelligence
       '@devbrain/project-engine':
         specifier: workspace:*
         version: link:../../packages/project-engine
@@ -116,6 +119,9 @@ importers:
       '@devbrain/database':
         specifier: workspace:*
         version: link:../database
+      '@devbrain/intelligence':
+        specifier: workspace:*
+        version: link:../intelligence
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -176,6 +182,18 @@ importers:
       '@devbrain/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/intelligence:
+    dependencies:
+      '@devbrain/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@devbrain/database':
+        specifier: workspace:*
+        version: link:../database
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/project-engine:
     dependencies:

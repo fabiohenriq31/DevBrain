@@ -7,6 +7,7 @@ import type { Plugin } from 'vite';
 const WORKSPACE = [
   '@devbrain/contracts',
   '@devbrain/ai-gateway',
+  '@devbrain/intelligence',
   '@devbrain/security',
   '@devbrain/database',
   '@devbrain/project-engine',
