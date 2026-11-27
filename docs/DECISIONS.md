@@ -212,3 +212,30 @@ corrompidos vão para quarentena e o backup mais recente é restaurado.
 quantidade de arquivos de log (5 MB × 5) e de backups (5). A manutenção roda na
 inicialização e a cada minuto. Eventos de status, erro, aprovação e uso nunca são
 descartados por limite; a saída excedente é marcada `outputTruncated`.
+
+## ADR-0019: aplicativo desktop, terminal somente leitura e canais Git de inspeção
+
+**Status:** aceita (Fase 01 — bloco Antigravity)
+
+**Contexto.** A Fase 01 exige uma interface desktop completa no Windows que opere
+exclusivamente sobre `window.devbrain`, exiba streaming em terminal integrado, permita
+inspecionar estado e diferenças Git geradas pelo motor e preserve todas as garantias de
+segurança do Electron (`contextIsolation`, `sandbox`, CSP estrita sem `unsafe-eval`, sem
+acesso irrestrito ao shell pelo renderer).
+
+**Decisão.**
+
+1. O terminal integrado usa `@xterm/xterm` (`6.0.0`) em modo estritamente somente leitura
+   (`disableStdin: true`), alimentado por `execution.event` e reconciliado com
+   `executions.listEvents` por `seq` monotônico sem duplicatas. Antes da escrita no
+   terminal, sequências de controle não confiáveis (`OSC` como OSC 52, `DCS`, `APC` e `CSI`
+   não-SGR) são removidas no renderer (`sanitizeTerminalChunk`), e textos fora do terminal
+   são renderizados apenas como nós de texto escapados (`UntrustedBlock`).
+2. Para inspecionar estado e diferenças Git sem expor caminhos arbitrários ao renderer,
+   `@devbrain/contracts` `0.3.0` adiciona os canais somente leitura `git.status` e
+   `git.diff`, endereçados apenas por `workspaceId`, com redação de segredos e teto de
+   bytes (`maxBytes`) aplicados no processo main.
+3. Preferências puramente visuais (layout de painéis, estado do onboarding) ficam isoladas
+   em esquema com lista branca de chaves; nenhum segredo ou caminho sensível passa por
+   `localStorage`. Custos `null` vindos de provedores CLI são sempre apresentados como
+   "custo desconhecido / não informado pelo provedor", nunca como zero.

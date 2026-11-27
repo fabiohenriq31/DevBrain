@@ -77,6 +77,17 @@ conta ChatGPT. Alterou `counter.js` (adicionou `triple(n)`), persistiu 24 evento
 separadamente o caminho IPC completo com um processo Node controlado. Nenhuma chave de
 API paga foi usada.
 
-### Antigravity: `phase-01/antigravity-desktop`
+### Antigravity: `phase-01/antigravity-desktop` (2026-11-27)
 
-A1 a A8: ⏳.
+| Item | Status | Evidência |
+| --- | --- | --- |
+| A1 — Shell desktop (barra de título integrada Windows, barra lateral redimensionável, seletor de projeto ativo, painel contextual, barra de status, notificações, paleta de comandos `Ctrl+K`, atalhos) | ✅ | `apps/desktop/src/renderer/src/App.tsx`, `components/Overlays.tsx`; validado em `scripts/smoke-desktop.mjs` (`uiShellMounted`) |
+| A2 — Gerenciamento de projetos (importar, criar pasta, recentes, arquivar/restaurar, remoção segura preservando arquivos em disco, tecnologias, estado Git e branch atual, configurações e diretórios autorizados, exportação JSON) | ✅ | `views/ProjectsView.tsx`, `apps/desktop/src/main/ipc.test.ts` |
+| A3 — Workspace operacional e terminal integrado (`xterm.js` somente leitura, busca, cópia, auto-scroll, expansão, reconexão/replay por `seq` sem duplicar eventos, sanitização contra OSC 52, cancelamento `graceful`/`force`, arquivos modificados, visualizador de diff Git, recuperação de sessão `interrupted` via `resumeFromSessionId`) | ✅ | `views/WorkspaceView.tsx`, `components/TerminalPane.tsx`, `components/DiffViewer.tsx`, `lib/stream.ts`, `renderer.test.ts` |
+| A4 — Central de segurança e aprovações (modal e fila pendente, escopos `once`/`session`/`project`, avisos de origem não confiável e limitações `enforcement: none`, revogação imediata de grants, trilha de auditoria e editor/simulador de políticas) | ✅ | `components/ApprovalModal.tsx`, `views/ApprovalsSecurityView.tsx` |
+| A5 — Onboarding e Configurações (assistente inicial com opção de pular e retomar, temas claro/escuro/sistema, idioma `pt-BR`/`en` preparado para i18n, limites, retenção, orçamento, saúde SQLite e backup local, custo desconhecido nunca tratado como zero) | ✅ | `views/OnboardingModal.tsx`, `views/SettingsView.tsx`, `lib/i18n.ts` |
+| A6 — `@devbrain/ui`: tokens claro/escuro e primitivos acessíveis (`Button`, `Badge`, `Field`, `Input`, `Textarea`, `Select`, `Checkbox`, `Banner`, `EmptyState`, `UntrustedBlock`, `Dialog`, `Tabs`, `DataTable`, `SplitPane`) | ✅ | `packages/ui/src/*`, `packages/ui/src/ui.test.ts` |
+| A7 — Testes unitários, de integração IPC e smoke E2E real no Electron cobrindo UI, segurança IPC, streaming, cancelamento, aprovações e recuperação após falha | ✅ | `ui.test.ts`, `renderer.test.ts`, `ipc.test.ts`, `scripts/smoke-desktop.mjs` |
+| A8 — Identidade visual, ícones de autoria própria (`resources/icon.svg`, `icon.png`, `icon.ico`) e empacotamento Windows x64 NSIS (`deleteAppDataOnUninstall: false`, `THIRD_PARTY_NOTICES.md`) | ✅ | `resources/*`, `apps/desktop/electron-builder.yml`, instalador NSIS testado (instalação, execução, persistência e desinstalação preservando `%APPDATA%\DevBrain AI`) |
+
+Nota de validação de adaptadores no ambiente atual: `providers.checkDependencies` foi executado contra `openai-codex-cli`, `claude-code-cli` e `google-antigravity-cli`; nesta estação Windows atual nenhum dos executáveis (`codex`, `claude`, `agy`) está instalado no `PATH`, portanto o aplicativo reporta honestamente `missing-dependency` ("Não instalado") sem simular resultados.
