@@ -51,3 +51,13 @@ os metadados publicados de cada pacote.
 O Electron distribui o Chromium e o Node.js, cada um com as próprias licenças
 (`LICENSES.chromium.html` no binário). Ao empacotar o instalador, a Fase 01 deve incluir
 esses avisos.
+
+## Dados de descoberta da Fase 02
+
+`catalog/models-dev-candidates.json` deriva de `https://models.dev/api.json`, projeto
+Models.dev (Anomaly), licença MIT. Revisão upstream
+`63a9d0be1c4ae507b1ba6482888252b1cec71240`; SHA-256 do JSON original
+`5e570f75704a7366d8b40652895e3d25e79e15f2f0e792176a35b33b1f65e851`.
+O script `scripts/sync-models-dev.mjs` seleciona nomes, IDs de modelos, documentação
+e endpoints declarados, marca oferta, preço, termos e cotas como desconhecidos e
+produz um documento de importação estrito. Nenhum código upstream foi copiado.

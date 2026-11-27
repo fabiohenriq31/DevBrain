@@ -113,3 +113,15 @@ preservação dos dados.
 | Antigravity CLI real | ⏸️ | `agy` não instalado; flags conferidas na documentação oficial |
 | Instalador NSIS consolidado (não assinado) | ✅ | SHA-256 `F5DB492DA22E4C36EA4E6153250DFE707FFC8587F2AC9D8B61630151221E2A22` |
 | CI no GitHub, navegação visual manual completa | ⏸️ | Não executados |
+
+### Codex: `phase-02/codex-ai-gateway` (2026-11-27)
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Contratos 0.5.0 da Fase 02 | ✅ | `phase-02/contracts`, PR #5, validação completa da base inicial |
+| Transportes e gateway interno | 🟡 | Seis protocolos; testes de HTTP 200 com erro, stream, cancelamento e fallback controlado; sem inferência externa autenticada |
+| Ledger SQLite e recuperação | 🟡 | Migration 003 e testes de concorrência, janela, consumo incerto; escopos avançados e créditos ainda pendentes |
+| Catálogo de descoberta | 🟡 | 327 candidatos Models.dev com proveniência; nenhuma conexão habilitada automaticamente; validação individual pendente |
+| OpenCode | 🟡 | Adaptador CLI no motor da Fase 01 e servidor loopback autenticado opcional; CLI ausente no ambiente; integração de ciclo de vida entre ambos pendente |
+| Runtime local | 🟡 | Ollama: inspeção, modelos, download e remoção; teste com servidor local controlado; runtime real ausente |
+| Interface e políticas avançadas | ⏸️ | Consumidores Claude e Antigravity, sem alegação de implementação nesta branch |
