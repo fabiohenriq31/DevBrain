@@ -58,7 +58,24 @@ simulada e reinício do app real).
 
 ### Codex: `phase-01/codex-engine`
 
-X1 a X10: ⏳.
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Processo sem shell, ambiente filtrado, limite de saída, timeout, cancelamento de árvore | 🟡 | `execution-engine`; testes com processos Node reais (sucesso, falha, timeout, cancelamento, executável ausente) |
+| Estados e eventos ordenados persistidos via Core; checkpoint após execução | 🟡 | `OperationalExecutionService`; a integração pelo IPC ainda aguarda o dono do arquivo |
+| Autorização, aprovações e concorrência do Core | 🟡 | Chamadas a `authorizeExecution`, `authorizeCommand`, `acquireSlot`; teste ponta a ponta com Core pendente |
+| Descoberta de Codex, Claude Code e Antigravity CLI | 🟡 | Registry e verificação de executável/versão; apenas Codex está instalado nesta máquina |
+| Git: detecção, status porcelain v2, diff e commits | ✅ | Teste com repositório temporário e arquivos modificados/não rastreados |
+| Git worktrees | 🟡 | Criar/remover worktree sem força; recusa remoção com alterações; orquestração paralela reservada à Fase 03 |
+| Canais IPC de execução e descoberta | ⏳ | Pedido de integração ao dono em `docs/INTEGRATION.md` |
+| CI | 🟡 | Workflow Windows existente; execução remota do PR ainda não verificada |
+| Instalador Windows | ⏳ | Ainda não implementado |
+
+Validação externa isolada: `codex exec --json --sandbox workspace-write`, autenticado
+pela conta ChatGPT, alterou `counter.js` num diretório temporário (adicionou
+`triple(n)`), emitiu `item.completed` de `file_change` e `turn.completed`, e terminou
+com exit code 0. O comando foi executado diretamente para verificar o protocolo
+oficial; o caminho completo via `OperationalExecutionService` e IPC ainda precisa
+ser validado. Nenhuma chave de API paga foi usada.
 
 ### Antigravity: `phase-01/antigravity-desktop`
 
