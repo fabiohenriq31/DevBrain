@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Install scripts are blocked by default (pnpm >= 10). Approve explicitly, with an ADR,
+# only when a dependency truly needs one.
+allowBuilds:
+  # Denied on purpose: electron >= 44 fetches its binary lazily on first launch.
+  electron: false

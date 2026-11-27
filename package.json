@@ -1,0 +1,37 @@
+{
+  "name": "devbrain-ai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DevBrain AI — local-first desktop platform for multi-agent software development.",
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.12.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "build": "pnpm run build:packages && pnpm --filter @devbrain/desktop build",
+    "build:packages": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.test.json && pnpm --filter @devbrain/desktop typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "dev": "pnpm --filter @devbrain/desktop dev",
+    "clean": "node scripts/clean.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "validate": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test && pnpm run check:secrets && pnpm --filter @devbrain/desktop build && pnpm run smoke:desktop",
+    "smoke:desktop": "node scripts/smoke-desktop.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.6",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "prettier": "3.10.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  }
+}
