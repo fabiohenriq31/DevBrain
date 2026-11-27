@@ -9,6 +9,7 @@ import {
   type ProviderCatalogEntry,
 } from '@devbrain/contracts';
 import type { SqlDriver } from '@devbrain/database';
+import { SPECIFIC_CONNECTION_PROFILES } from './profiles.js';
 
 const ImportEntry = ProviderCatalogEntrySchema.extend({
   siteUrl: z.url().nullable(),
@@ -63,9 +64,11 @@ export class ProviderCatalog {
   constructor(private readonly db: SqlDriver) {}
 
   list(): ProviderCatalogEntry[] {
-    return this.db
+    const imported = this.db
       .all<{ data: string }>('SELECT data FROM ai_catalog_entries ORDER BY id')
       .map((row) => ImportEntry.parse(JSON.parse(row.data)));
+    const ids = new Set(imported.map((entry) => entry.id));
+    return [...imported, ...SPECIFIC_CONNECTION_PROFILES.filter((entry) => !ids.has(entry.id))];
   }
 
   import(bytes: Uint8Array, expectedSourceId: string): CatalogSnapshot {

@@ -58,10 +58,29 @@ const DEFAULT_ENDPOINTS_BY_PROVIDER: Readonly<
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1', protocol: 'openai-chat' },
   groq: { baseUrl: 'https://api.groq.com/openai/v1', protocol: 'openai-chat' },
   mistral: { baseUrl: 'https://api.mistral.ai/v1', protocol: 'openai-chat' },
+  nvidia: { baseUrl: 'https://integrate.api.nvidia.com/v1', protocol: 'openai-chat' },
+  cohere: { baseUrl: 'https://api.cohere.ai/compatibility/v1', protocol: 'openai-chat' },
+  cerebras: { baseUrl: 'https://api.cerebras.ai/v1', protocol: 'openai-chat' },
+  huggingface: { baseUrl: 'https://router.huggingface.co/v1', protocol: 'openai-chat' },
+  vercel: { baseUrl: 'https://ai-gateway.vercel.sh/v1', protocol: 'openai-chat' },
+  togetherai: { baseUrl: 'https://api.together.xyz/v1', protocol: 'openai-chat' },
+  'fireworks-ai': { baseUrl: 'https://api.fireworks.ai/inference/v1', protocol: 'openai-chat' },
+  deepinfra: { baseUrl: 'https://api.deepinfra.com/v1/openai', protocol: 'openai-chat' },
+  'siliconflow-cn': { baseUrl: 'https://api.siliconflow.cn/v1', protocol: 'openai-chat' },
+  'alibaba-cn': {
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    protocol: 'openai-chat',
+  },
+  zai: { baseUrl: 'https://api.z.ai/api/paas/v4', protocol: 'openai-chat' },
   deepseek: { baseUrl: 'https://api.deepseek.com/v1', protocol: 'openai-chat' },
   anthropic: { baseUrl: 'https://api.anthropic.com', protocol: 'anthropic-messages' },
-  google: { baseUrl: 'https://generativelanguage.googleapis.com', protocol: 'google-gemini' },
+  google: {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    protocol: 'google-gemini',
+  },
   ollama: { baseUrl: 'http://127.0.0.1:11434', protocol: 'ollama' },
+  lmstudio: { baseUrl: 'http://127.0.0.1:1234/v1', protocol: 'openai-chat' },
+  'llama-cpp': { baseUrl: 'http://127.0.0.1:8080/v1', protocol: 'openai-chat' },
 };
 
 export const MarketplaceWizardSection = ({

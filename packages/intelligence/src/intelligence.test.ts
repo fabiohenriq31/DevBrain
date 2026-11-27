@@ -625,17 +625,17 @@ describe('BenchmarkEngine (objective graders)', () => {
     expect((await byId('context-needle').grade('VERMILLION-42')).passed).toBe(true);
   });
 
-  it('runs code graders in a permission-restricted process', async () => {
+  it('disables code graders without a network-isolated sandbox', async () => {
     const fixed =
       'function sumRange(a, b) {\n  let total = 0;\n  for (let i = a; i <= b; i++) total += i;\n  return total;\n}';
-    expect((await byId('bugfix-sum').grade('```js\n' + fixed + '\n```')).passed).toBe(true);
+    expect((await byId('bugfix-sum').grade('```js\n' + fixed + '\n```')).passed).toBe(false);
     expect(
       (await byId('bugfix-sum').grade('```js\nfunction sumRange(a,b){return 0}\n```')).passed,
     ).toBe(false);
     const goodTests =
       'function check(isPrime) {\n  if (isPrime(0) || isPrime(1)) throw new Error("0/1");\n  if (!isPrime(2) || !isPrime(13)) throw new Error("primes");\n  if (isPrime(9)) throw new Error("9");\n}';
     expect((await byId('testgen-isprime').grade('```js\n' + goodTests + '\n```')).passed).toBe(
-      true,
+      false,
     );
     const fs = await runSandboxedJs("require('node:fs').writeFileSync('pwned.txt', 'x')");
     expect(fs.ok).toBe(false);

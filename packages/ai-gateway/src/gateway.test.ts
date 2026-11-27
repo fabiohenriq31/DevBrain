@@ -13,6 +13,7 @@ import { QuotaLedger } from './ledger.js';
 import { SafeHttpTransport } from './transport.js';
 import { ProtocolTransport } from './protocols.js';
 import { ProviderCatalog } from './catalog.js';
+import { SPECIFIC_CONNECTION_PROFILES, connectionRecipe } from './profiles.js';
 import { OllamaRuntime } from './local.js';
 import { LocalGatewayServer } from './server.js';
 
@@ -364,6 +365,18 @@ describe('gateway fallback', () => {
 });
 
 describe('catalog', () => {
+  it('ships distinct documented recipes without inferring free pricing or activating connections', () => {
+    expect(SPECIFIC_CONNECTION_PROFILES.length).toBeGreaterThanOrEqual(20);
+    expect(new Set(SPECIFIC_CONNECTION_PROFILES.map((entry) => entry.id)).size).toBe(
+      SPECIFIC_CONNECTION_PROFILES.length,
+    );
+    for (const entry of SPECIFIC_CONNECTION_PROFILES) {
+      expect(entry.documentationUrl).toMatch(/^https:\/\//);
+      expect(entry.sourceUrls).toContain(entry.documentationUrl);
+      expect(entry.offer).toBe(entry.kind === 'local' ? 'local' : 'unknown');
+      if (entry.endpointUrl) expect(connectionRecipe(entry.id)?.baseUrl).toBe(entry.endpointUrl);
+    }
+  });
   it('rejects invalid input and leaves the prior snapshot intact', () => {
     const catalog = new ProviderCatalog(db().driver);
     expect(() =>
@@ -374,7 +387,7 @@ describe('catalog', () => {
         'official',
       ),
     ).toThrow();
-    expect(catalog.list()).toEqual([]);
+    expect(catalog.list().length).toBeGreaterThanOrEqual(20);
   });
   it('imports the pinned models.dev discovery snapshot without enabling connections', () => {
     const database = db();
@@ -382,7 +395,7 @@ describe('catalog', () => {
     const bytes = readFileSync('catalog/models-dev-candidates.json');
     const snapshot = catalog.import(bytes, 'models-dev');
     expect(snapshot.providerCount).toBeGreaterThan(100);
-    expect(catalog.list()).toHaveLength(snapshot.providerCount);
+    expect(catalog.list().length).toBeGreaterThanOrEqual(snapshot.providerCount);
     expect(database.driver.all('SELECT id FROM ai_connections')).toEqual([]);
   });
 });

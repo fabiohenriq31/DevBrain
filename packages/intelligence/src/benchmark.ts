@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type {
@@ -40,39 +39,12 @@ export const extractCode = (text: string): string =>
 
 const extractJson = (text: string): unknown => JSON.parse(extractCode(text).trim());
 
-/**
- * Runs untrusted model-written JavaScript for grading in a separate Node process with the
- * permission model enabled (no filesystem, child processes or workers), an empty environment,
- * a hard timeout and an output cap. Residual risk: Node's permission model does not block
- * network access — grading code is model output and must be treated as hostile; run the
- * benchmark only against routes you trust and never with secrets in the environment.
- */
+/** Code execution grading is disabled until a network-isolated sandbox is available. */
 export const runSandboxedJs = (
-  code: string,
-  timeoutMs = 5000,
+  _code: string,
+  _timeoutMs = 5000,
 ): Promise<{ ok: boolean; output: string }> =>
-  new Promise((resolve) => {
-    const child = spawn(process.execPath, ['--permission', '-e', code], {
-      env: { ELECTRON_RUN_AS_NODE: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-    let output = '';
-    const take = (chunk: Buffer) => {
-      if (output.length < 8000) output += chunk.toString('utf8');
-    };
-    child.stdout.on('data', take);
-    child.stderr.on('data', take);
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
-    child.on('error', (error) => {
-      clearTimeout(timer);
-      resolve({ ok: false, output: error.message });
-    });
-    child.on('close', (exitCode) => {
-      clearTimeout(timer);
-      resolve({ ok: exitCode === 0, output: output.slice(0, 2000) });
-    });
-  });
+  Promise.resolve({ ok: false, output: 'UNSUPPORTED: network-isolated sandbox unavailable' });
 
 const user = (content: string): Message[] => [{ role: 'user', content }];
 
@@ -233,7 +205,13 @@ export const CORE_SUITE: BenchmarkSuite = {
   ],
 };
 
-export const SUITES: readonly BenchmarkSuite[] = [CORE_SUITE];
+export const SUITES: readonly BenchmarkSuite[] = [
+  {
+    ...CORE_SUITE,
+    version: '1.0.1',
+    cases: CORE_SUITE.cases.filter((item) => !['bugfix-sum', 'testgen-isprime'].includes(item.id)),
+  },
+];
 
 /**
  * BenchmarkEngine — executes a suite through a caller-provided runner (in the app: the

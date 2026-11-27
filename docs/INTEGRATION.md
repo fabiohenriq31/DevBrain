@@ -1,5 +1,16 @@
 # Integração
 
+## Consolidação da Fase 02 (2026-11-27)
+
+`phase-02/consolidation` parte da `develop` que contém a UI Antigravity e
+incorpora `phase-02/claude-intelligence` por merge. A branch Claude já contém
+o gateway Codex como ancestral. O Core continua dono de credenciais, sessões,
+projetos e auditoria; o gateway não cria serviços paralelos para essas funções.
+As decisões de privacidade de projeto passam por `ai.projectPolicy.get/save`.
+As receitas específicas ficam em `packages/ai-gateway/src/profiles.ts` e não
+ativam contas ou modelos. O relatório verificável está em
+`docs/PHASE_02_FINAL_REPORT.md`.
+
 ## Branches
 
 | Branch | Uso | Quem faz merge |

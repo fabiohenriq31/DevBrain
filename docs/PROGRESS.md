@@ -116,6 +116,16 @@ preservação dos dados.
 
 ## Fase 02
 
+### Consolidação: `phase-02/consolidation` (2026-11-27)
+
+- Merge da inteligência Claude sobre `develop` com a UI Antigravity e o gateway Codex, preservando o histórico.
+- `pnpm validate` aprovado com 194 testes.
+- 22 receitas específicas documentadas disponíveis no catálogo inicial; ainda não equivalem a conexões autenticadas.
+- Privacidade de projeto lida e gravada no main; inferência de sessão exige `projectId` correspondente.
+- Execução CLI restrita por política; benchmarks com JavaScript não confiável desativados até existir sandbox sem rede.
+- Instalador NSIS x64 versão 0.2.0 gerado. Aceite externo e ponte OpenCode ao gateway permanecem pendentes.
+- Estado completo, evidências e pendências em `docs/PHASE_02_FINAL_REPORT.md`.
+
 ### Antigravity: `phase-02/antigravity-ai-center` (2026-11-27)
 
 Base: `origin/phase-02/contracts` (`4ada206`, descendente da consolidação da Fase 01 `61ae38f`, contratos `0.6.0`).

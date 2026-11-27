@@ -3,5 +3,6 @@ export * from './transport.js';
 export * from './protocols.js';
 export * from './gateway.js';
 export * from './catalog.js';
+export * from './profiles.js';
 export * from './local.js';
 export * from './server.js';

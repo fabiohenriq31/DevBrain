@@ -226,7 +226,12 @@ export class ProtocolTransport {
   ): Promise<'available' | 'unavailable' | 'unknown'> {
     const protocol = endpoint.protocol;
     const base = endpoint.baseUrl.replace(/\/+$/, '');
-    const path = protocol === 'ollama' ? '/api/tags' : '/models';
+    const path =
+      protocol === 'ollama'
+        ? '/api/tags'
+        : protocol === 'anthropic-messages'
+          ? '/v1/models'
+          : '/models';
     const headers: Record<string, string> = { accept: 'application/json' };
     if (credential) {
       if (protocol === 'anthropic-messages') {

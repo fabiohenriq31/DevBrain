@@ -4,6 +4,7 @@ import { basename, delimiter, extname, isAbsolute, join, relative } from 'node:p
 import { access, realpath, stat } from 'node:fs/promises';
 import {
   DevBrainError,
+  ProjectAiPolicySchema,
   EXECUTION_TRANSITIONS,
   SubmitExecutionInputSchema,
   newId,
@@ -281,6 +282,29 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
       if (!agent) throw new DevBrainError('NOT_FOUND', 'Agent not found');
       const provider = this.core.db.providers.findById(agent.providerId)?.provider;
       if (!provider) throw new DevBrainError('NOT_FOUND', 'Provider not found');
+      if (request.payload.kind === 'prompt') {
+        const row = this.core.db.driver.get<{ data: string }>(
+          'SELECT data FROM ai_project_policies WHERE project_id=:id',
+          { id: session.projectId },
+        );
+        const projectPolicy = ProjectAiPolicySchema.parse(
+          row ? JSON.parse(row.data) : { projectId: session.projectId, updatedAt: nowTimestamp() },
+        );
+        // CLI processes can use their own accounts and network path. Gateway quota, budget and
+        // privacy policies cannot be claimed for them until a verified gateway binding exists.
+        if (
+          projectPolicy.privacyClass === 'restricted' ||
+          (provider.adapterKey === 'opencode-cli' &&
+            (projectPolicy.privacyClass !== 'public' ||
+              !projectPolicy.budget.allowPaid ||
+              !projectPolicy.budget.allowUnboundedCost))
+        ) {
+          throw new DevBrainError(
+            'PERMISSION_DENIED',
+            'This CLI is not bound to the AI gateway; project privacy or budget policy blocks execution',
+          );
+        }
+      }
       if (request.payload.kind === 'prompt') {
         const adapter = this.registry.get(provider.adapterKey);
         const dependency = await adapter.checkDependencies();
