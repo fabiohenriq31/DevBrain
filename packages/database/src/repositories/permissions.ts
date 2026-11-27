@@ -182,7 +182,9 @@ export class GrantRepository {
     now: string;
   }): PermissionGrant[] {
     const where: string[] = [];
-    const params: SqlParams = { now: filter.now };
+    // node:sqlite rejects named parameters the statement does not use, so `now` is bound
+    // only together with the clause that references it.
+    const params: SqlParams = {};
     if (filter.agentId) {
       where.push('agent_id = :agentId');
       params['agentId'] = filter.agentId;
@@ -191,7 +193,10 @@ export class GrantRepository {
       where.push('project_id = :projectId');
       params['projectId'] = filter.projectId;
     }
-    if (!filter.includeInactive) where.push('revoked_at IS NULL AND expires_at > :now');
+    if (!filter.includeInactive) {
+      where.push('revoked_at IS NULL AND expires_at > :now');
+      params['now'] = filter.now;
+    }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     return this.db
       .all<GrantRow>(

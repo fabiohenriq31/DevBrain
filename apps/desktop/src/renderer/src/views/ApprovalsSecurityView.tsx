@@ -131,7 +131,7 @@ export const ApprovalsSecurityView = ({
   const refreshSecurityRecords = useCallback(async () => {
     try {
       const [g, a] = await Promise.all([
-        invoke('permissions.listGrants', { includeInactive: false }),
+        invoke('permissions.listGrants', { includeInactive: true }),
         invoke('audit.list', {
           limit: 300,
           ...(activeProjectId ? { projectId: activeProjectId } : {}),

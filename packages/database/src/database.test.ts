@@ -372,7 +372,12 @@ describe('repositories', () => {
       maxConcurrentPerAgent: 2,
     });
     expect(next.retention).toEqual({ ...DEFAULT_RETENTION, logMaxFiles: 3 });
-    expect(next.budget).toEqual({ currency: 'USD', maxPerDay: 5, maxPerMonth: null });
+    expect(next.budget).toEqual({
+      currency: 'USD',
+      maxPerDay: 5,
+      maxPerMonth: null,
+      allowWithoutCostGuarantee: false,
+    });
     await expect(
       db.settings.update({ execution: { maxConcurrentExecutions: 0 } }),
     ).rejects.toThrow();
@@ -476,6 +481,65 @@ describe('execution history', () => {
       0,
     );
     expect(bytes).toBeLessThanOrEqual(64 * 1024);
+  });
+
+  it('lists grants with and without inactive ones (regression: unused :now binding)', () => {
+    db = createDatabase({ location: ':memory:' });
+    const { agentId, project, session } = seed(db);
+    const now = Date.now();
+    const at = (ms: number) => new Date(now + ms).toISOString();
+    const grant = (expiresAt: string) => {
+      const approvalId = newId('approval');
+      db!.approvals.save({
+        id: approvalId,
+        agentId,
+        sessionId: session.id,
+        executionId: null,
+        action: 'process.spawn',
+        risk: 'medium',
+        summary: 's',
+        details: {},
+        untrustedOrigin: false,
+        status: 'approved',
+        requestedAt: at(-2000),
+        expiresAt: at(60_000),
+        decidedAt: at(-1000),
+        decidedBy: 'user',
+        decisionNote: null,
+        projectId: project.id,
+        scope: 'project',
+        target: null,
+      });
+      return db!.grants.insert({
+        id: newId('grant'),
+        approvalId,
+        agentId,
+        projectId: project.id,
+        sessionId: null,
+        action: 'process.spawn',
+        scope: 'project',
+        target: null,
+        createdAt: at(-1000),
+        expiresAt,
+        revokedAt: null,
+        revokedReason: null,
+      });
+    };
+    const active = grant(at(60_000));
+    const expired = grant(at(-500));
+    const revoked = grant(at(60_000));
+    db.grants.revoke(revoked.id, 'test', at(0));
+    const nowIso = at(0);
+    expect(db.grants.list({ includeInactive: false, now: nowIso }).map((g) => g.id)).toEqual([
+      active.id,
+    ]);
+    const all = db.grants.list({
+      includeInactive: true,
+      now: nowIso,
+      agentId,
+      projectId: project.id,
+    });
+    expect(all.map((g) => g.id).sort()).toEqual([active.id, expired.id, revoked.id].sort());
   });
 
   it('finds orphaned live sessions of other app instances', () => {

@@ -234,6 +234,9 @@ describe('desktop main IPC handlers & security boundaries', () => {
         reason: 'test revoke',
       });
       expect(revoked.revokedAt).not.toBeNull();
+      // Full history (regression: includeInactive used to fail with an unused :now binding).
+      const history = await call('permissions.listGrants', { includeInactive: true });
+      expect(history.find((g) => g.id === revoked.id)?.revokedAt).not.toBeNull();
     } finally {
       await engine.close();
       core.close();
