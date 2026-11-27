@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import * as C from './entities/core.js';
 import { AgentSchema } from './entities/agent.js';
-import { CheckpointSchema, CredentialReferenceSchema } from './entities/records.js';
+import {
+  CheckpointSchema,
+  CredentialReferenceSchema,
+  GitStatusSchema,
+} from './entities/records.js';
 import { PermissionPolicySchema } from './entities/permissions.js';
 import { WorkspaceSchema } from './entities/project.js';
 import {
@@ -43,6 +47,8 @@ import {
   ProjectIdSchema,
   ProviderIdSchema,
   SessionIdSchema,
+  TimestampSchema,
+  WorkspaceIdSchema,
 } from './common.js';
 import {
   DevBrainError,
@@ -106,6 +112,37 @@ export const ExecutionHandleSchema = z.object({
   status: ExecutionStatusSchema,
 });
 export type ExecutionHandle = z.infer<typeof ExecutionHandleSchema>;
+
+/**
+ * @since 0.3.0 — Git inspection of a registered workspace. The renderer passes a workspace id,
+ * never a path: main resolves the root from the Core and only reads (status / diff).
+ */
+export const GitWorkspaceInputSchema = z.object({ workspaceId: WorkspaceIdSchema });
+export type GitWorkspaceInput = z.input<typeof GitWorkspaceInputSchema>;
+
+export const GitDiffInputSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+  /** Upper bound of diff text returned; larger diffs are cut and flagged `truncated`. */
+  maxBytes: z
+    .number()
+    .int()
+    .min(1024)
+    .max(8 * 1024 * 1024)
+    .default(2 * 1024 * 1024),
+});
+export type GitDiffInput = z.input<typeof GitDiffInputSchema>;
+
+export const GitDiffSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+  /**
+   * Unified diff of unstaged changes to tracked files (`git diff`), redacted in main.
+   * Untracked files are not included; they are listed by `git.status`. UNTRUSTED text.
+   */
+  diff: z.string(),
+  truncated: z.boolean(),
+  capturedAt: TimestampSchema,
+});
+export type GitDiff = z.infer<typeof GitDiffSchema>;
 
 export const IPC_CHANNELS = {
   'system.getInfo': channel(Empty, SystemInfoSchema, 'Application and runtime information.'),
@@ -341,6 +378,18 @@ export const IPC_CHANNELS = {
     'Database integrity and recovery report.',
   ),
   'system.backup': channel(Empty, C.BackupResultSchema, 'Create a local database backup now.'),
+
+  // ---- 0.3.0: read-only Git inspection of workspaces -------------------------
+  'git.status': channel(
+    GitWorkspaceInputSchema,
+    GitStatusSchema.nullable(),
+    'Git status of a workspace (null when it is not a repository).',
+  ),
+  'git.diff': channel(
+    GitDiffInputSchema,
+    GitDiffSchema,
+    'Unified diff of unstaged tracked changes in a workspace (redacted, size-capped).',
+  ),
 } as const satisfies Record<string, ChannelDefinition>;
 
 export type IpcChannelKey = keyof typeof IPC_CHANNELS;

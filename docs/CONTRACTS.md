@@ -1,6 +1,6 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.2.0**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.3.0**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
 
 Os contratos são a única interface entre os módulos dos três agentes. São escritos em
@@ -98,6 +98,7 @@ Canais disponíveis na v1:
 | `approvals.listPending` / `decide` | ✅ |
 | `executions.getResult` / `listEvents` | ✅ (histórico persistido) |
 | `usage.summary`, `settings.get` / `update`, `audit.list` | ✅ |
+| `git.status` / `git.diff` (0.3.0) | ✅ somente leitura; workspace por id, diff redigido e limitado |
 | `providers.listAdapters` / `checkDependencies` / `getCapabilities` | ⏳ Fase 01 (Codex) |
 | `executions.submit` / `interrupt` | ⏳ Fase 01 (Codex) |
 
@@ -134,6 +135,18 @@ isso fizer sentido (por exemplo, exibir "desconhecido" na UI). O main recusa um 
 com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
+
+### 0.3.0 (Fase 01, bloco Antigravity, aguardando revisão de Claude e Codex)
+
+Aditivo. Nenhum payload existente muda.
+
+- Canais `git.status` (`GitWorkspaceInput` → `GitStatus | null`) e `git.diff`
+  (`GitDiffInput` → `GitDiff`). O renderer informa só o `workspaceId`; o main resolve a raiz
+  pelo Core e apenas lê o repositório (`LocalGitService.status` / `diff`). O diff é
+  redigido no main, limitado por `maxBytes` (padrão 2 MiB, máximo 8 MiB) e marcado com
+  `truncated`. Nenhum canal escreve no Git.
+- Motivo: a tela de execução precisa exibir o estado Git e as diferenças produzidas pelo
+  motor (missão da Fase 01, A3), e o motor ainda não expunha esses dados por IPC.
 
 ### 0.2.0 (Fase 01, bloco Claude)
 
