@@ -1,0 +1,185 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--db-bg, #0d1016);
+  color: var(--db-text, #e6eaf2);
+  font-family:
+    'Segoe UI Variable Text',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--db-focus, #4c9aff);
+  outline-offset: 1px;
+}
+
+.db-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.db-btn-ghost:hover:not(:disabled) {
+  background: var(--db-surface-hover) !important;
+  color: var(--db-text) !important;
+}
+
+.db-splitter {
+  transition: background-color 120ms ease;
+}
+
+.db-splitter:hover,
+.db-splitter:focus-visible {
+  background: var(--db-accent) !important;
+}
+
+.db-titlebar {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--db-titlebar, #0a0d12);
+  border-bottom: 1px solid var(--db-border, #222938);
+  padding-left: 10px;
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px);
+  -webkit-app-region: drag;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.db-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.db-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--db-text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.db-nav-item:hover {
+  background: var(--db-surface-hover);
+  color: var(--db-text);
+}
+
+.db-nav-item[data-active='true'] {
+  background: var(--db-accent-subtle);
+  color: var(--db-accent);
+  border-color: rgba(76, 154, 255, 0.25);
+  font-weight: 600;
+}
+
+.db-card {
+  background: var(--db-surface);
+  border: 1px solid var(--db-border);
+  border-radius: 7px;
+  padding: 14px;
+}
+
+.db-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.db-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--db-text);
+}
+
+.db-mono {
+  font-family: 'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace;
+}
+
+.db-muted {
+  color: var(--db-text-muted);
+}
+
+.db-faint {
+  color: var(--db-text-faint);
+}
+
+.db-scroll {
+  overflow: auto;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--db-border-strong);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--db-text-faint);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.db-diff-line {
+  display: flex;
+  font-family: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre;
+  padding: 0 10px;
+}
+
+.db-diff-add {
+  background: var(--db-diff-add-bg);
+  color: var(--db-diff-add-fg);
+}
+
+.db-diff-del {
+  background: var(--db-diff-del-bg);
+  color: var(--db-diff-del-fg);
+}
+
+.db-diff-hunk {
+  background: var(--db-accent-subtle);
+  color: var(--db-accent);
+}

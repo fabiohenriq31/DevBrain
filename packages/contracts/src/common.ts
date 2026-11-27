@@ -20,6 +20,7 @@ export const ID_PREFIXES = {
   credential: 'crd',
   checkpoint: 'chk',
   audit: 'aud',
+  grant: 'grt',
 } as const;
 export type IdKind = keyof typeof ID_PREFIXES;
 
@@ -45,6 +46,7 @@ export const ApprovalIdSchema = idSchema('approval');
 export const CredentialIdSchema = idSchema('credential');
 export const CheckpointIdSchema = idSchema('checkpoint');
 export const AuditIdSchema = idSchema('audit');
+export const GrantIdSchema = idSchema('grant');
 
 /**
  * Absolute filesystem path as provided by a caller. This schema only checks shape;
@@ -79,3 +81,19 @@ export type PageRequest = z.input<typeof PageRequestSchema>;
 
 export const pageOf = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), nextCursor: z.string().nullable() });
+
+/**
+ * Like `.partial()` but strips `.default()` wrappers, so parsing a patch never injects
+ * default values that would overwrite stored ones.
+ */
+export const patchOf = <T extends z.ZodRawShape>(
+  schema: z.ZodObject<T>,
+): z.ZodObject<{ [K in keyof T]: z.ZodOptional<T[K]> }> => {
+  const shape: Record<string, z.ZodType> = {};
+  for (const [key, value] of Object.entries(schema.shape)) {
+    const inner =
+      value instanceof z.ZodDefault ? (value.unwrap() as z.ZodType) : (value as z.ZodType);
+    shape[key] = inner.optional();
+  }
+  return z.object(shape) as unknown as z.ZodObject<{ [K in keyof T]: z.ZodOptional<T[K]> }>;
+};

@@ -5,6 +5,7 @@ import {
   ExecutionIdSchema,
   NonEmptyStringSchema,
   PolicyIdSchema,
+  ProjectIdSchema,
   SessionIdSchema,
   TimestampSchema,
 } from '../common.js';
@@ -112,6 +113,16 @@ export const ApprovalStatusSchema = z.enum([
 ]);
 export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
 
+/**
+ * How far an approval reaches.
+ * - `once`: only the execution/action that requested it.
+ * - `session`: same agent + action (+ target filter) for the rest of the session.
+ * - `project`: same agent + action (+ target filter) in the project until revoked/expired.
+ * Actions in ALWAYS_ASK_ACTIONS can only be approved `once`.
+ */
+export const ApprovalScopeSchema = z.enum(['once', 'session', 'project']);
+export type ApprovalScope = z.infer<typeof ApprovalScopeSchema>;
+
 export const ApprovalRequestSchema = z.object({
   id: ApprovalIdSchema,
   agentId: AgentIdSchema,
@@ -132,6 +143,12 @@ export const ApprovalRequestSchema = z.object({
   /** `user` only. Agents can never decide approvals. */
   decidedBy: z.literal('user').nullable(),
   decisionNote: z.string().max(2000).nullable(),
+  /** @since 0.2.0 */
+  projectId: ProjectIdSchema.nullable().default(null),
+  /** @since 0.2.0 — scope granted by the user when approving. */
+  scope: ApprovalScopeSchema.default('once'),
+  /** @since 0.2.0 — workspace-relative path / executable the request is about. */
+  target: z.string().max(4096).nullable().default(null),
 });
 export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
 
@@ -139,5 +156,14 @@ export const ApprovalDecisionInputSchema = z.object({
   approvalId: ApprovalIdSchema,
   decision: z.enum(['approved', 'denied']),
   note: z.string().max(2000).optional(),
+  /** @since 0.2.0 */
+  scope: ApprovalScopeSchema.optional(),
+  /** @since 0.2.0 — lifetime of a session/project grant (default: settings). */
+  grantTtlMs: z
+    .number()
+    .int()
+    .min(60_000)
+    .max(30 * 24 * 60 * 60 * 1000)
+    .optional(),
 });
 export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionInputSchema>;

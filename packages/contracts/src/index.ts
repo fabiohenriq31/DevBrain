@@ -7,5 +7,6 @@ export * from './entities/agent.js';
 export * from './entities/permissions.js';
 export * from './entities/execution.js';
 export * from './entities/records.js';
+export * from './entities/core.js';
 export * from './ipc.js';
 export type * from './services.js';

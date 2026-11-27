@@ -1,11 +1,16 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { BrowserWindow, app } from 'electron';
-import { createDatabase, type DevBrainDatabase } from '@devbrain/database';
+import { BrowserWindow, Menu, app } from 'electron';
+import { ipcEventName } from '@devbrain/contracts';
+import { OperationalExecutionService } from '@devbrain/execution-engine';
+import { startCore, type StartedCore } from './core.js';
 import { registerIpc } from './ipc.js';
 import { applyProcessHardening, hardenSession, hardenWebContents } from './security.js';
 
 const devServerUrl = !app.isPackaged ? process.env['ELECTRON_RENDERER_URL'] : undefined;
-let db: DevBrainDatabase | null = null;
+let started: StartedCore | null = null;
+let engine: OperationalExecutionService | null = null;
+let closing = false;
 
 applyProcessHardening();
 
@@ -13,28 +18,28 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 }
 
-const openDatabase = (): DevBrainDatabase | null => {
-  try {
-    // userData lives outside the repository (%APPDATA%\DevBrain AI on Windows).
-    return createDatabase({ location: join(app.getPath('userData'), 'devbrain.db') });
-  } catch (error) {
-    console.error(
-      '[devbrain] failed to open database:',
-      error instanceof Error ? error.message : 'unknown',
-    );
-    return null;
-  }
-};
-
 const createWindow = (): BrowserWindow => {
+  const iconCandidate = join(__dirname, '../../../resources/icon.png');
   const window = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 960,
-    minHeight: 600,
+    width: 1400,
+    height: 860,
+    minWidth: 1024,
+    minHeight: 640,
     show: false,
     title: 'DevBrain AI',
-    backgroundColor: '#0f1115',
+    autoHideMenuBar: true,
+    backgroundColor: '#0d1016',
+    ...(existsSync(iconCandidate) ? { icon: iconCandidate } : {}),
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: {
+            color: '#0d1016',
+            symbolColor: '#9aa3b2',
+            height: 38,
+          },
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -70,9 +75,16 @@ app.on('second-instance', () => {
 
 void app.whenReady().then(() => {
   app.setAppUserModelId('ai.devbrain.desktop');
+  Menu.setApplicationMenu(null);
   hardenSession();
-  db = openDatabase();
-  registerIpc({ db, devServerUrl });
+  started = startCore();
+  engine = started.core ? new OperationalExecutionService(started.core) : null;
+  engine?.subscribe((event) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(ipcEventName('execution.event'), event);
+    }
+  });
+  registerIpc({ core: started.core, engine, devServerUrl });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -83,7 +95,18 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('will-quit', () => {
-  db?.close();
-  db = null;
+app.on('before-quit', (event) => {
+  if (closing) return;
+  event.preventDefault();
+  closing = true;
+  void (async () => {
+    try {
+      await engine?.close();
+    } finally {
+      started?.core?.close();
+      started = null;
+      engine = null;
+      app.quit();
+    }
+  })();
 });

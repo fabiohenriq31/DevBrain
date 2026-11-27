@@ -30,9 +30,14 @@ os metadados publicados de cada pacote.
 | --- | --- | --- |
 | electron | 44.11.1 | MIT |
 | electron-vite | 6.0.0 | MIT |
+| electron-builder | 26.18.0 | MIT |
 | vite | 8.3.8 | MIT |
 | @vitejs/plugin-react | 6.3.0 | MIT |
 | react, react-dom | 19.1.10 | MIT |
+| @xterm/xterm | 6.0.0 | MIT |
+| @xterm/addon-fit | 0.11.0 | MIT |
+| @xterm/addon-search | 0.16.0 | MIT |
+| lucide-react | 1.70.0 | ISC |
 | zod | 4.6.7 | MIT |
 | typescript | 6.0.3 | Apache-2.0 |
 | vitest | 5.1.0 | MIT |

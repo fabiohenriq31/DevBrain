@@ -5,6 +5,7 @@
     { "path": "packages/security" },
     { "path": "packages/database" },
     { "path": "packages/project-engine" },
+    { "path": "packages/core" },
     { "path": "packages/provider-sdk" },
     { "path": "packages/execution-engine" },
     { "path": "packages/git-engine" },

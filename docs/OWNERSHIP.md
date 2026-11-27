@@ -14,6 +14,8 @@ Legenda: **C** = Claude · **X** = Codex · **A** = Antigravity · **P** = Propr
 | `packages/security/**` | C | n/a |
 | `packages/database/**` | C | n/a |
 | `packages/project-engine/**` | C | n/a |
+| `packages/core/**` (serviços do Core, desde a Fase 01) | C | X (API consumida pelo motor) |
+| `apps/desktop/src/main/core.ts` (inicialização do Core) | C | n/a |
 | Pacotes futuros do Core (`repo-analyzer`, `knowledge`, `planner`) | C | n/a |
 | `packages/provider-sdk/**` | X | C (interface pública) |
 | `packages/execution-engine/**` | X | C (segurança) |

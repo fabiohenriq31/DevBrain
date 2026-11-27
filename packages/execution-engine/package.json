@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@devbrain/contracts": "workspace:*",
+    "@devbrain/core": "workspace:*",
+    "@devbrain/git-engine": "workspace:*",
     "@devbrain/provider-sdk": "workspace:*",
     "@devbrain/security": "workspace:*"
   }
