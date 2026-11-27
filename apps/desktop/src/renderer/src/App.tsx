@@ -89,6 +89,7 @@ export const App = () => {
   const [settings, setSettings] = useState<ApplicationSettings | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectPolicies, setProjectPolicies] = useState<Record<string, ProjectPrivacyClass>>({});
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [adapters, setAdapters] = useState<AdapterDescriptor[]>([]);
   const [dependencyReports, setDependencyReports] = useState<Record<string, DependencyReport>>({});
@@ -235,6 +236,22 @@ export const App = () => {
       if (aiModelsOutcome.status === 'ok') {
         setDiscoveredAiModels([...aiModelsOutcome.data]);
       }
+      const projectPolicyResults = await Promise.all(
+        allProjects.map(async (project) => ({
+          id: project.id,
+          outcome: await window.devbrain.invoke('ai.projectPolicy.get', { projectId: project.id }),
+        })),
+      );
+      setProjectPolicies(
+        Object.fromEntries(
+          projectPolicyResults
+            .filter((item) => item.outcome.ok)
+            .map((item) => [
+              item.id,
+              item.outcome.ok ? item.outcome.data.privacyClass : 'personal-private',
+            ]),
+        ),
+      );
 
       setStorageHealth(health);
       setSettings(cfg);
@@ -300,19 +317,30 @@ export const App = () => {
   }, [prefs.activeProjectId, projects]);
 
   const activeProjectPrivacy: ProjectPrivacyClass = activeProject
-    ? (prefs.projectPrivacy[activeProject.id] ?? 'personal-private')
+    ? (projectPolicies[activeProject.id] ?? 'personal-private')
     : 'personal-private';
 
   const handleChangeProjectPrivacy = useCallback(
     (projectId: string, next: ProjectPrivacyClass) => {
-      updatePrefs({
-        projectPrivacy: {
-          ...prefs.projectPrivacy,
-          [projectId]: next,
-        },
+      void (async () => {
+        const current = await invoke('ai.projectPolicy.get', { projectId });
+        const saved = await invoke('ai.projectPolicy.save', {
+          projectId,
+          privacyClass: next,
+          approvedProviderIds: current.approvedProviderIds,
+          budget: current.budget,
+        });
+        setProjectPolicies((previous) => ({ ...previous, [projectId]: saved.privacyClass }));
+      })().catch((error: unknown) => {
+        pushNotification({
+          tone: 'danger',
+          title: 'Não foi possível salvar a privacidade do projeto',
+          body: describeError(error, 'pt-BR').message,
+          targetSection: 'projects',
+        });
       });
     },
-    [prefs.projectPrivacy, updatePrefs],
+    [pushNotification],
   );
 
   const openAiCenterTab = useCallback((tab: AiCenterTab) => {
@@ -936,7 +964,7 @@ export const App = () => {
             activeProjectId={activeProject?.id ?? null}
             agents={agents}
             policies={policies}
-            projectPrivacyMap={prefs.projectPrivacy}
+            projectPrivacyMap={projectPolicies}
             onChangeProjectPrivacy={handleChangeProjectPrivacy}
             onSelectProject={handleSelectProject}
             onOpenWorkspaceSession={(projectId, sessionId) => {

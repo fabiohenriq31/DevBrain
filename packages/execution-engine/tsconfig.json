@@ -9,6 +9,7 @@
   "references": [
     { "path": "../contracts" },
     { "path": "../provider-sdk" },
+    { "path": "../git-engine" },
     { "path": "../security" }
   ]
 }

@@ -327,9 +327,19 @@ export const createHandlers = ({
       g().configurePolicy(input);
       return input.policy;
     },
-    'ai.inference.submit': (input) => ({
-      requestId: g().submit(input, (event) => emitAi('ai.inference.event', event)),
-    }),
+    'ai.inference.submit': async (input) => {
+      if (input.projectId && !c().db.projects.findById(input.projectId))
+        throw new DevBrainError('NOT_FOUND', 'Project not found');
+      if (input.sessionId) {
+        const session = await c().sessions.get(input.sessionId);
+        if (!input.projectId || input.projectId !== session.projectId)
+          throw new DevBrainError(
+            'PERMISSION_DENIED',
+            'Inference must use its session project policy',
+          );
+      }
+      return { requestId: g().submit(input, (event) => emitAi('ai.inference.event', event)) };
+    },
     'ai.inference.result': (input) => g().result(input.requestId),
     'ai.inference.cancel': (input) => ({ cancelled: g().cancel(input.requestId) }),
     'ai.inference.attempts': (input) => g().attempts(input.requestId),
@@ -356,7 +366,11 @@ export const createHandlers = ({
       };
     },
     'ai.routes.explain': (input) => g().explain(input),
-    'ai.projectPolicy.get': (input) => g().intelligence.projectPolicyOrDefault(input.projectId),
+    'ai.projectPolicy.get': (input) => {
+      if (!c().db.projects.findById(input.projectId))
+        throw new DevBrainError('NOT_FOUND', 'Project not found');
+      return g().intelligence.projectPolicyOrDefault(input.projectId);
+    },
     'ai.projectPolicy.save': (input) => {
       if (!c().db.projects.findById(input.projectId))
         throw new DevBrainError('NOT_FOUND', 'Project not found');
