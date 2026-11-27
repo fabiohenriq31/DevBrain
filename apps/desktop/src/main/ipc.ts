@@ -1,20 +1,31 @@
-import { BrowserWindow, app, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import {
+  BrowserWindow,
+  app,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import {
   CONTRACTS_VERSION,
   DevBrainError,
   IPC_CHANNELS,
   dispatchIpc,
   ipcChannelName,
+  nowTimestamp,
   type IpcChannelKey,
   type IpcHandlerMap,
 } from '@devbrain/contracts';
 import type { CoreServices } from '@devbrain/core';
 import type { OperationalExecutionService } from '@devbrain/execution-engine';
+import { LocalGitService } from '@devbrain/git-engine';
+import { redactString } from '@devbrain/security';
 import { isTrustedRendererUrl } from './security.js';
 
 export interface MainServices {
   core: CoreServices | null;
   engine?: OperationalExecutionService | null;
+  git?: LocalGitService;
   devServerUrl: string | undefined;
 }
 
@@ -22,14 +33,41 @@ export interface MainServices {
 const defined = <T extends object>(value: T): { [K in keyof T]: Exclude<T[K], undefined> } =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as never;
 
-const focusedWindow = () => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+const focusedWindow = () =>
+  typeof BrowserWindow?.getFocusedWindow === 'function'
+    ? (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])
+    : undefined;
+
+const applyWindowTheme = (theme: 'system' | 'light' | 'dark'): void => {
+  if (process.platform !== 'win32' || typeof BrowserWindow?.getAllWindows !== 'function') return;
+  try {
+    if (nativeTheme) nativeTheme.themeSource = theme;
+    const dark =
+      theme === 'dark' || (theme === 'system' && (nativeTheme?.shouldUseDarkColors ?? true));
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.setTitleBarOverlay?.({
+          color: dark ? '#0d1016' : '#f3f5f8',
+          symbolColor: dark ? '#9aa3b2' : '#3d4655',
+          height: 38,
+        });
+      }
+    }
+  } catch {
+    /* ignore in headless/non-Win32 environments */
+  }
+};
 
 /**
  * IPC handlers. Channels owned by the execution engine (Codex) — adapters, dependency checks,
  * executions — have no handler yet and answer `UNSUPPORTED` (honestly reported, never
  * simulated) until their owner implements them.
  */
-export const createHandlers = ({ core, engine }: MainServices): IpcHandlerMap => {
+export const createHandlers = ({
+  core,
+  engine,
+  git = new LocalGitService(),
+}: MainServices): IpcHandlerMap => {
   const c = (): CoreServices => {
     if (!core)
       throw new DevBrainError(
@@ -100,7 +138,27 @@ export const createHandlers = ({ core, engine }: MainServices): IpcHandlerMap =>
 
     // ---- providers & agents -------------------------------------------------
     'providers.listAdapters': () => e().listAdapters(),
-    'providers.checkDependencies': (input) => e().checkDependencies(input.adapterKey),
+    'providers.checkDependencies': async (input) => {
+      const report = await e().checkDependencies(input.adapterKey);
+      if (core) {
+        const capabilities = await e()
+          .getCapabilities(input.adapterKey)
+          .catch(() => undefined);
+        const configured = await core.providers.list();
+        for (const item of configured) {
+          if (item.provider.adapterKey === input.adapterKey) {
+            await core.providers.recordEvidence({
+              providerId: item.provider.id,
+              aspect: 'installed',
+              state: report.status === 'available' ? 'yes' : 'no',
+              detail: report.checks[0]?.version ?? report.checks[0]?.message ?? null,
+              ...(capabilities ? { capabilities } : {}),
+            });
+          }
+        }
+      }
+      return report;
+    },
     'providers.getCapabilities': (input) => e().getCapabilities(input.adapterKey),
     'providers.listConfigured': () => c().providers.list(),
     'providers.get': (input) => c().providers.get(input.id),
@@ -148,13 +206,52 @@ export const createHandlers = ({ core, engine }: MainServices): IpcHandlerMap =>
 
     // ---- settings, usage, audit ---------------------------------------------------
     'settings.get': () => c().settings.get(),
-    'settings.update': (input) => c().settings.update(input),
+    'settings.update': async (input) => {
+      const updated = await c().settings.update(input);
+      applyWindowTheme(updated.theme);
+      return updated;
+    },
     'usage.summary': (input) => c().usage.summary(defined(input)),
     'audit.list': (input) =>
       c().db.audit.list({
         limit: input.limit,
         ...(input.projectId ? { projectId: input.projectId } : {}),
       }),
+
+    // ---- read-only Git inspection of workspaces -----------------------------
+    'git.status': async (input) => {
+      const workspace = c().db.workspaces.findById(input.workspaceId);
+      if (!workspace) {
+        throw new DevBrainError('NOT_FOUND', 'Workspace not found', {
+          details: { workspaceId: input.workspaceId },
+        });
+      }
+      const repo = await git.detect(workspace.rootPath);
+      if (!repo) return null;
+      return git.status(workspace.rootPath);
+    },
+    'git.diff': async (input) => {
+      const workspace = c().db.workspaces.findById(input.workspaceId);
+      if (!workspace) {
+        throw new DevBrainError('NOT_FOUND', 'Workspace not found', {
+          details: { workspaceId: input.workspaceId },
+        });
+      }
+      const repo = await git.detect(workspace.rootPath);
+      if (!repo) {
+        return {
+          workspaceId: workspace.id,
+          diff: '',
+          truncated: false,
+          capturedAt: nowTimestamp(),
+        };
+      }
+      const raw = redactString(await git.diff(workspace.rootPath));
+      const buf = Buffer.from(raw, 'utf8');
+      const truncated = buf.byteLength > input.maxBytes;
+      const diff = truncated ? buf.subarray(0, input.maxBytes).toString('utf8') : raw;
+      return { workspaceId: workspace.id, diff, truncated, capturedAt: nowTimestamp() };
+    },
   };
 };
 

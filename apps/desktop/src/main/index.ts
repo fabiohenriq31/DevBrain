@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { BrowserWindow, app } from 'electron';
+import { BrowserWindow, Menu, app } from 'electron';
 import { ipcEventName } from '@devbrain/contracts';
 import { OperationalExecutionService } from '@devbrain/execution-engine';
 import { startCore, type StartedCore } from './core.js';
@@ -18,14 +19,27 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 const createWindow = (): BrowserWindow => {
+  const iconCandidate = join(__dirname, '../../../resources/icon.png');
   const window = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 960,
-    minHeight: 600,
+    width: 1400,
+    height: 860,
+    minWidth: 1024,
+    minHeight: 640,
     show: false,
     title: 'DevBrain AI',
-    backgroundColor: '#0f1115',
+    autoHideMenuBar: true,
+    backgroundColor: '#0d1016',
+    ...(existsSync(iconCandidate) ? { icon: iconCandidate } : {}),
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: {
+            color: '#0d1016',
+            symbolColor: '#9aa3b2',
+            height: 38,
+          },
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -61,6 +75,7 @@ app.on('second-instance', () => {
 
 void app.whenReady().then(() => {
   app.setAppUserModelId('ai.devbrain.desktop');
+  Menu.setApplicationMenu(null);
   hardenSession();
   started = startCore();
   engine = started.core ? new OperationalExecutionService(started.core) : null;
