@@ -238,6 +238,14 @@ const after = await second.evaluate(
     await new Promise((res) => setTimeout(res, 100));
   }
   r.uiTerminalMounted = !!document.querySelector('[data-testid="terminal-pane"] .xterm');
+  const aiProbe = await window.devbrain.invoke('ai.catalog.list', {});
+  r.aiChannelContractValid = aiProbe.ok || aiProbe.error.code === 'UNSUPPORTED';
+  const navItems = document.querySelectorAll('.db-nav-item');
+  if (navItems[2]) navItems[2].click();
+  for (let i = 0; i < 20 && document.querySelectorAll('[role="tab"]').length < 11; i += 1) {
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  r.uiAiCenterMounted = document.querySelectorAll('[role="tab"]').length === 11;
   return r;
 })()`.replaceAll('__SID__', checks?.sessionId ?? ''),
 );
@@ -289,6 +297,8 @@ const expected = {
   recoveredSessions: 1,
   sessionAfterCrash: 'interrupted',
   uiTerminalMounted: true,
+  aiChannelContractValid: true,
+  uiAiCenterMounted: true,
 };
 const failures = Object.entries(expected).filter(([k, v]) => checks?.[k] !== v);
 if (failures.length) {
