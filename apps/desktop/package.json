@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@devbrain/contracts": "workspace:*",
+    "@devbrain/ai-gateway": "workspace:*",
     "@devbrain/core": "workspace:*",
     "@devbrain/database": "workspace:*",
     "@devbrain/execution-engine": "workspace:*",

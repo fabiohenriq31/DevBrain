@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, Menu, app } from 'electron';
-import { ipcEventName } from '@devbrain/contracts';
+import { DevBrainError, ipcEventName } from '@devbrain/contracts';
+import { AiGateway, OllamaRuntime, ProviderCatalog } from '@devbrain/ai-gateway';
 import { OperationalExecutionService } from '@devbrain/execution-engine';
 import { startCore, type StartedCore } from './core.js';
 import { registerIpc } from './ipc.js';
@@ -84,7 +85,17 @@ void app.whenReady().then(() => {
       if (!window.isDestroyed()) window.webContents.send(ipcEventName('execution.event'), event);
     }
   });
-  registerIpc({ core: started.core, engine, devServerUrl });
+  const core = started.core;
+  const gateway = core
+    ? new AiGateway(core.db.driver, async (id, providerId) => {
+        const ref = (await core.credentials.list()).find((item) => item.id === id);
+        if (!ref || ref.providerId !== providerId)
+          throw new DevBrainError('PERMISSION_DENIED', 'Credential is not bound to this provider');
+        return core.credentials.resolve(id, { providerId, reason: 'ai.inference' });
+      })
+    : null;
+  const catalog = core ? new ProviderCatalog(core.db.driver) : null;
+  registerIpc({ core, engine, gateway, catalog, localRuntime: new OllamaRuntime(), devServerUrl });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
