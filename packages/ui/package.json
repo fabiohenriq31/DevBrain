@@ -17,5 +17,12 @@
     "build": "tsc -b",
     "typecheck": "tsc -b"
   },
-  "dependencies": {}
+  "dependencies": {
+    "react": "19.1.10",
+    "react-dom": "19.1.10"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
+  }
 }
