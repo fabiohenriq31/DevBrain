@@ -20,6 +20,12 @@ export const ErrorCodeSchema = z.enum([
   'CREDENTIAL_UNAVAILABLE',
   'UNSUPPORTED',
   'CONTRACT_VERSION_MISMATCH',
+  /** @since 0.2.0 — the owning process died; state was recovered, not resumed. */
+  'INTERRUPTED',
+  /** @since 0.2.0 — local database failure (busy, corrupt, disk full). */
+  'STORAGE_ERROR',
+  /** @since 0.2.0 */
+  'BUDGET_EXCEEDED',
   'INTERNAL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;

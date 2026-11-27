@@ -27,11 +27,11 @@ TypeScript com responsabilidades bem separadas.
 ## Pacotes e dependências
 
 ```
-contracts  ◄── security ◄── database ◄── project-engine
-    ▲             ▲             ▲              ▲
-    ├── provider-sdk ◄── execution-engine ─────┤
-    ├── git-engine                              │
-    └────────────── apps/desktop (main) ────────┘
+contracts  ◄── security ◄── database ◄── project-engine ◄── core
+    ▲             ▲             ▲              ▲              ▲
+    ├── provider-sdk ◄── execution-engine ─────┴──────────────┤
+    ├── git-engine                                            │
+    └──────────────────────── apps/desktop (main) ────────────┘
 ui ◄── apps/desktop (renderer)    (o renderer só importa contracts *tipos* e ui)
 ```
 
@@ -40,7 +40,8 @@ ui ◄── apps/desktop (renderer)    (o renderer só importa contracts *tipos
 | `contracts` | Entidades, IPC, serviços, erros, versões (zod) | Universal (sem Node) |
 | `security` | Confinamento de caminhos, política de permissões, comandos, redação, cofre, limites, conteúdo não confiável | Node |
 | `database` | Driver SQL, migrações com checksum, repositórios | Node (`node:sqlite`) |
-| `project-engine` | `ProjectService`: registro, workspaces, arquivamento, auditoria | Node |
+| `project-engine` | `ProjectService`: criação, importação, workspaces, tecnologias, configurações por projeto, arquivamento, remoção do registro | Node |
+| `core` (Fase 01) | Composição do Core: provedores (prontidão por evidência), agentes, políticas, credenciais, aprovações e grants, autorização efetiva, sessões e histórico, uso e orçamento, recuperação, manutenção (`createCoreServices`) | Node |
 | `provider-sdk` | Interface `ProviderAdapter` + `ProviderRegistry` | Node |
 | `execution-engine` | `SessionService` / `ExecutionService` (Fase 01) | Node |
 | `git-engine` | `GitService` (Fase 01) | Node |
@@ -71,14 +72,20 @@ Canais sem handler respondem `UNSUPPORTED`. Não existem respostas simuladas.
 ## Execução de agentes (projeto da Fase 01)
 
 ```
-ExecutionService.submit
-  → PermissionService (política do agente + assessCommand + ALWAYS_ASK_ACTIONS)
-  → [ask] ApprovalService.request → evento approval.requested → UI → decide (usuário)
-  → ConcurrencyLimiter (global + por agente)
+ExecutionService.submit                                   (Codex)
+  → core.authorization.authorizeExecution                 (Claude: sessão, cwd, orçamento,
+                                                           plano de enforcement)
+  → core.authorization.acquireSlot (global + por agente)
+  → core.sessions.recordInstruction
   → ProviderAdapter.execute (spawn shell:false, cwd confinado, env allowlist)
-  → ExecutionEvent (seq monotônico) → ExecutionHistoryStore + IPC event
-  → ExecutionResult (status terminal) + Checkpoint
+      → por ação: core.authorization.enforce / authorizeCommand
+      → [ask] ApprovalService.request → approval.requested → UI → decide (usuário)
+  → ExecutionEvent (seq monotônico) → core.sessions.recordEvent + IPC event
+  → ExecutionResult (status terminal) → core.sessions.recordResult (+ uso) + Checkpoint
 ```
+
+Na inicialização, `createCoreServices` abre o banco (checagem de integridade, recuperação),
+registra o `app_run` e marca como `interrupted` o que pertencia a uma instância morta.
 
 A máquina de estados de `ExecutionStatus` está em `EXECUTION_TRANSITIONS`. Qualquer
 transição fora dela é bug.
@@ -95,10 +102,21 @@ para um `utilityProcess` ou um processo de baixo privilégio, sem mudar contrato
 - Colunas JSON armazenam payloads de contrato e são revalidadas na leitura.
 - `audit_events` é append-only, garantido por triggers.
 - Unicidade de caminhos sem diferenciar maiúsculas no Windows (`root_path_key`).
+- Migração 2 (Fase 01): integridade referencial com `ON DELETE CASCADE` a partir de
+  `projects` (workspaces → sessões → execuções → eventos, checkpoints, arquivos de sessão,
+  grants); tabelas `project_settings`, `credential_secrets`, `session_files`,
+  `permission_grants`, `usage_records`, `app_runs`, `maintenance_state`, `audit_guard`;
+  índices por projeto, status e data.
+- Transações: `BEGIN IMMEDIATE` com nova tentativa em `SQLITE_BUSY`; transações aninhadas
+  usam savepoints. WAL com `synchronous=NORMAL` e `busy_timeout`. Erros do SQLite viram
+  códigos estáveis (`ALREADY_EXISTS`, `CONFLICT`, `PERMISSION_DENIED`, `STORAGE_ERROR`).
+- Arquivo: `openStorage` faz `quick_check`, coloca bancos corrompidos em quarentena,
+  restaura o backup mais recente e faz backup antes de migrar.
 
 ## Configuração e dados
 
-- Dados do usuário: `app.getPath('userData')` (`%APPDATA%\DevBrain AI`).
+- Dados do usuário: `app.getPath('userData')` (`%APPDATA%\DevBrain AI`): `devbrain.db`,
+  `backups/`, `corrupt/`, `logs/`.
 - Configurações: tabela `settings`, validadas por `ApplicationSettingsSchema`. A
   telemetria é literalmente `false`.
 - Segredos: `CredentialVault` (`safeStorage`/DPAPI) guarda só o texto cifrado. Os

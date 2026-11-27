@@ -137,3 +137,78 @@ gerados com IA. Ele lê arquivos internos e não documentados do Claude Code.
 
 **Decisão.** `main` (estável) ← `develop` (integração) ← `phase-NN/<agente>-<área>`. As
 três branches da Fase 01 partem do mesmo commit de fundação. Veja INTEGRATION.md.
+
+## ADR-0013: pacote `@devbrain/core`
+
+**Status:** aceita (Fase 01)
+
+**Contexto.** Provedores, credenciais, sessões, permissões e aprovações cruzam
+`security`, `database` e `project-engine`. Colocar essa composição no `apps/desktop`
+deixaria a lógica sem testes fora do Electron.
+
+**Decisão.** Um pacote `packages/core` (dono: Claude) compõe os serviços e expõe
+`createCoreServices({ databaseFile, cipher, instanceId, ... })`. O desktop só o inicializa
+(`main/core.ts`) e registra handlers. Tudo é testável com SQLite em memória ou em
+diretórios temporários.
+
+**Consequências.** O motor de execução (Codex) consome `core.*` no main. Mudanças na API
+pública do Core seguem o mesmo cuidado dos contratos (registro em INTEGRATION.md).
+
+## ADR-0014: prontidão de provedores derivada de evidências
+
+**Status:** aceita (Fase 01)
+
+**Decisão.** `ProviderReadiness` (`disabled` < `configured` < `available` <
+`authenticated` < `operational`, ou `failing`) é **calculada**, nunca gravada. Ela vem de
+três evidências (`installed`, `authenticated`, `operational`) que só
+`ProviderService.recordEvidence`, uma API do main **sem canal IPC**, pode registrar, com
+`source: 'execution-engine'`. Mudar executável, endpoint ou credencial zera as
+evidências. Capacidades (inclusive `enforcement`) só mudam por evidência.
+
+**Consequências.** Um provedor recém-configurado aparece como `configured`, mesmo que o
+CLI esteja instalado, até o motor verificar. A UI não consegue declarar disponibilidade.
+
+## ADR-0015: aplicação de permissões e integrações sem interceptação
+
+**Status:** aceita (Fase 01)
+
+**Decisão.** `AuthorizationService` é o único ponto de decisão e aplicação (`enforce`
+lança erro em `deny`; `ask` cria a aprovação e espera). Para agentes cuja integração não
+permite interceptar ações, `planEnforcement` exige o modo mais restritivo suportado e uma
+aprovação humana por sessão, e devolve as limitações para a UI exibir. A ausência de
+informação equivale a `enforcement: 'none'`.
+
+**Consequências.** Nenhuma permissão é "decorativa": ou o DevBrain intercepta a ação, ou
+o usuário aprova conscientemente rodar o agente sabendo o que não é controlado.
+
+## ADR-0016: escopo de aprovações e grants
+
+**Status:** aceita (Fase 01)
+
+**Decisão.** O usuário aprova `once`, `session` ou `project`. `session` e `project` criam
+um `PermissionGrant` com expiração (`security.defaultGrantTtlMs`, padrão 8 h) e alvo
+opcional (glob de caminho ou executável). Grants só elevam `ask` para `allow`; não valem
+para `ALWAYS_ASK_ACTIONS` nem para pedidos de origem não confiável; nunca anulam `deny`.
+Grants de sessão são revogados no fim da sessão; o usuário pode revogar qualquer grant.
+
+## ADR-0017: recuperação após falhas, sem retomada de processos
+
+**Status:** aceita (Fase 01)
+
+**Decisão.** Sessões pertencem à instância do app que as criou (`instance_id`). Na
+inicialização, o que pertence a uma instância morta é marcado: sessões `interrupted`,
+execuções `failed` com `INTERRUPTED`, aprovações `cancelled`. O DevBrain não tenta
+reconectar ou "retomar" processos que já não existem. A continuação é uma **nova sessão**
+consciente (`resumeFromSessionId`), que herda o último checkpoint estruturado
+(`CheckpointStateV1`) e o identificador externo do provedor, se houver. Bancos
+corrompidos vão para quarentena e o backup mais recente é restaurado.
+
+## ADR-0018: crescimento limitado de histórico e logs
+
+**Status:** aceita (Fase 01)
+
+**Decisão.** `settings.retention` define idade máxima de eventos (30 dias) e da auditoria
+(365 dias), máximo de eventos (50.000) e de bytes de saída (32 MB) por execução, tamanho e
+quantidade de arquivos de log (5 MB × 5) e de backups (5). A manutenção roda na
+inicialização e a cada minuto. Eventos de status, erro, aprovação e uso nunca são
+descartados por limite; a saída excedente é marcada `outputTruncated`.

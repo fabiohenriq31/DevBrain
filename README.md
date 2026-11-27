@@ -40,6 +40,7 @@ packages/contracts        Contratos versionados e validados (zod): entidades, IP
 packages/security         Confinamento de caminhos, políticas, comandos, redação, cofre, limites
 packages/database         SQLite local (node:sqlite), migrações, repositórios
 packages/project-engine   Cadastro e gestão de projetos (entrada do DevBrain Core)
+packages/core             Serviços do Core: provedores, credenciais, sessões, permissões, aprovações, recuperação
 packages/provider-sdk     SDK de adaptadores (CLI, API, modelos locais)
 packages/execution-engine Motor de execução de agentes (Fase 01, Codex)
 packages/git-engine       Git, status e worktrees (Fase 01, Codex)

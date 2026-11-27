@@ -14,6 +14,9 @@ import {
 export const ProviderKindSchema = z.enum(['cli-agent', 'http-api', 'local-model']);
 export type ProviderKind = z.infer<typeof ProviderKindSchema>;
 
+export const EnforcementLevelSchema = z.enum(['per-action', 'adapter-sandbox', 'none']);
+export type EnforcementLevel = z.infer<typeof EnforcementLevelSchema>;
+
 export const CostModelSchema = z.enum(['free', 'subscription', 'metered', 'local', 'unknown']);
 export type CostModel = z.infer<typeof CostModelSchema>;
 
@@ -33,6 +36,15 @@ export const AgentCapabilitiesSchema = z.object({
   maxConcurrentSessions: z.number().int().min(1).nullable(),
   contextWindowTokens: z.number().int().min(1).nullable(),
   costModel: CostModelSchema,
+  /**
+   * @since 0.2.0 — how far DevBrain can enforce permissions on this integration.
+   * - `per-action`: every file/command/network action passes through DevBrain (tool proxy).
+   * - `adapter-sandbox`: the agent enforces a restrictive mode DevBrain configured
+   *   (e.g. read-only / workspace-write), but individual actions are not intercepted.
+   * - `none`: DevBrain cannot intercept or constrain actions (only cwd + approval at start).
+   * Missing = `none` (most restrictive interpretation).
+   */
+  enforcement: EnforcementLevelSchema.optional(),
 });
 export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;
 

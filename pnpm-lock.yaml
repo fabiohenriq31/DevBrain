@@ -38,6 +38,9 @@ importers:
       '@devbrain/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@devbrain/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@devbrain/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -82,6 +85,21 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
+  packages/core:
+    dependencies:
+      '@devbrain/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@devbrain/database':
+        specifier: workspace:*
+        version: link:../database
+      '@devbrain/project-engine':
+        specifier: workspace:*
+        version: link:../project-engine
+      '@devbrain/security':
+        specifier: workspace:*
+        version: link:../security
+
   packages/database:
     dependencies:
       '@devbrain/contracts':
@@ -90,6 +108,9 @@ importers:
       '@devbrain/security':
         specifier: workspace:*
         version: link:../security
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/execution-engine:
     dependencies:

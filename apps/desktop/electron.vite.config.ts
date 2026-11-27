@@ -9,6 +9,7 @@ const WORKSPACE = [
   '@devbrain/security',
   '@devbrain/database',
   '@devbrain/project-engine',
+  '@devbrain/core',
   '@devbrain/ui',
 ];
 

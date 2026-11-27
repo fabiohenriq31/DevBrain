@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@devbrain/contracts": "workspace:*",
+    "@devbrain/core": "workspace:*",
     "@devbrain/database": "workspace:*",
     "@devbrain/project-engine": "workspace:*",
     "@devbrain/security": "workspace:*",
