@@ -205,17 +205,19 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
       if (!agent) throw new DevBrainError('NOT_FOUND', 'Agent not found');
       const provider = this.core.db.providers.findById(agent.providerId)?.provider;
       if (!provider) throw new DevBrainError('NOT_FOUND', 'Provider not found');
-      const adapter = this.registry.get(provider.adapterKey);
-      const dependency = await adapter.checkDependencies();
-      await this.core.providers.recordEvidence({
-        providerId: provider.id,
-        aspect: 'installed',
-        state: dependency.status === 'available' ? 'yes' : 'no',
-        detail: dependency.checks[0]?.version ?? 'Executable unavailable',
-        capabilities: await adapter.getCapabilities(),
-      });
-      if (dependency.status !== 'available')
-        throw new DevBrainError('DEPENDENCY_MISSING', 'Agent CLI unavailable');
+      if (request.payload.kind === 'prompt') {
+        const adapter = this.registry.get(provider.adapterKey);
+        const dependency = await adapter.checkDependencies();
+        await this.core.providers.recordEvidence({
+          providerId: provider.id,
+          aspect: 'installed',
+          state: dependency.status === 'available' ? 'yes' : 'no',
+          detail: dependency.checks[0]?.version ?? 'Executable unavailable',
+          capabilities: await adapter.getCapabilities(),
+        });
+        if (dependency.status !== 'available')
+          throw new DevBrainError('DEPENDENCY_MISSING', 'Agent CLI unavailable');
+      }
       const auth = await this.core.authorization.authorizeExecution(
         { sessionId: session.id, workingDirectory: request.workingDirectory },
         { signal: active.abort.signal },
@@ -272,7 +274,9 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
         );
       if (
         request.payload.kind === 'prompt' &&
-        !['openai-codex-cli', 'claude-code-cli', 'google-antigravity-cli'].includes(adapter.key)
+        !['openai-codex-cli', 'claude-code-cli', 'google-antigravity-cli'].includes(
+          provider.adapterKey,
+        )
       )
         throw new DevBrainError('UNSUPPORTED', 'Adapter does not support prompt execution');
       const resolved = await findExecutable(executable);
