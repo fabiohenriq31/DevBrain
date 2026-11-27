@@ -309,6 +309,7 @@ export const AiResourceCenterView = ({
     const out = await callAiChannel('ai.inference.submit', {
       id,
       sessionId: null,
+      ...(activeProject ? { projectId: activeProject.id } : {}),
       modelId: null,
       messages: [{ role: 'user', content: prompt }],
       maxOutputTokens: 128,
@@ -543,6 +544,7 @@ export const AiResourceCenterView = ({
           <RoutingStrategiesSection
             snapshot={snapshot}
             settings={settings}
+            activeProjectId={activeProject?.id ?? null}
             projectPrivacy={projectPrivacy}
             onChangeProjectPrivacy={onChangeProjectPrivacy}
             strategyDraft={strategyDraft}
@@ -572,6 +574,7 @@ export const AiResourceCenterView = ({
           <DiagnosticsSection
             snapshot={snapshot}
             sessions={projectSessions}
+            activeProjectId={activeProject?.id ?? null}
             activeInferenceStream={activeInferenceStream}
             activeInferenceRequestId={activeInferenceRequestId}
             onSubmitDiagInference={handleSubmitDiagInference}

@@ -50,6 +50,7 @@ import { formatTimestamp, type AppLanguage } from '../../lib/i18n';
 export interface RoutingStrategiesSectionProps {
   snapshot: AiResourceSnapshot;
   settings: ApplicationSettings | null;
+  activeProjectId: string | null;
   projectPrivacy: ProjectPrivacyClass;
   onChangeProjectPrivacy: (next: ProjectPrivacyClass) => void;
   strategyDraft: StrategyDraft;
@@ -70,6 +71,7 @@ const PRESET_LABELS: readonly { id: StrategyPresetId; pt: string; en: string }[]
 export const RoutingStrategiesSection = ({
   snapshot,
   settings,
+  activeProjectId,
   projectPrivacy,
   onChangeProjectPrivacy,
   strategyDraft,
@@ -173,6 +175,7 @@ export const RoutingStrategiesSection = ({
   };
 
   const handleSimulateRouter = async () => {
+    if (!activeProjectId) return;
     setFeedback(null);
     setBusy(true);
     try {
@@ -180,6 +183,7 @@ export const RoutingStrategiesSection = ({
       const res = await callAiChannel('ai.routes.select', {
         id: reqId,
         sessionId: null,
+        ...(activeProjectId ? { projectId: activeProjectId } : {}),
         modelId: null,
         messages: [{ role: 'user', content: 'Inspecionar decisão do roteador.' }],
         maxOutputTokens: 256,
@@ -196,7 +200,7 @@ export const RoutingStrategiesSection = ({
           text:
             res.status === 'unsupported'
               ? pt
-                ? 'Seleção avançada ai.routes.select respondeu UNSUPPORTED — aguardando integração do motor de decisão (bloco Claude). Abaixo estão os motivos determinísticos de elegibilidade/bloqueio por rota.'
+                ? 'A inspeção de rotas não está disponível nesta instalação.'
                 : res.message
               : res.error.message,
         });
@@ -547,6 +551,7 @@ export const RoutingStrategiesSection = ({
             variant="secondary"
             icon={<Play size={12} />}
             loading={busy}
+            disabled={!activeProjectId}
             onClick={() => void handleSimulateRouter()}
           >
             {pt ? 'Inspecionar decisão do roteador' : 'Explain router decision'}
@@ -946,6 +951,7 @@ export const BenchmarksSection = ({
 export interface DiagnosticsSectionProps {
   snapshot: AiResourceSnapshot;
   sessions: readonly AgentSession[];
+  activeProjectId: string | null;
   activeInferenceStream: string;
   activeInferenceRequestId: string | null;
   onSubmitDiagInference: (prompt: string, policyId: string) => Promise<void>;
@@ -957,6 +963,7 @@ export interface DiagnosticsSectionProps {
 export const DiagnosticsSection = ({
   snapshot,
   sessions,
+  activeProjectId,
   activeInferenceStream,
   activeInferenceRequestId,
   onSubmitDiagInference,
@@ -1078,6 +1085,13 @@ export const DiagnosticsSection = ({
             ? 'Console de diagnóstico de inferência e streaming (ai.inference.*)'
             : 'Gateway inference & streaming diagnostic console'}
         </h3>
+        {!activeProjectId ? (
+          <Banner tone="info">
+            {pt
+              ? 'Selecione um projeto para aplicar sua política de privacidade à inferência.'
+              : 'Select a project to apply its privacy policy to inference.'}
+          </Banner>
+        ) : null}
         <div
           style={{
             display: 'grid',
@@ -1109,7 +1123,7 @@ export const DiagnosticsSection = ({
             size="sm"
             variant="primary"
             icon={<Play size={12} />}
-            disabled={Boolean(activeInferenceRequestId) || !diagPrompt.trim()}
+            disabled={Boolean(activeInferenceRequestId) || !activeProjectId || !diagPrompt.trim()}
             onClick={() => void onSubmitDiagInference(diagPrompt.trim(), diagPolicyId.trim())}
           >
             {pt ? 'Testar rota' : 'Test route'}

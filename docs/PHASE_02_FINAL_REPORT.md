@@ -20,8 +20,10 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
   instalado inclui 22 receitas de conexão documentadas. A ausência de preço ou
   cota permanece `unknown`; nenhuma receita cria credenciais ou ativa rotas.
 - A classificação de privacidade exibida pela interface é lida e gravada por
-  `ai.projectPolicy.*` no processo main. Inferências de sessão exigem `projectId`
-  válido e correspondente ao projeto da sessão.
+  `ai.projectPolicy.*` no processo main e não é gravada em `localStorage`.
+  Diagnósticos e seleção de rotas enviam o projeto ativo; a interface bloqueia
+  o diagnóstico sem projeto. O processo main valida `projectId` e sua
+  correspondência com a sessão em inferência e inspeção de rotas.
 - Execuções CLI incompatíveis com projeto restrito são bloqueadas no motor. O
   OpenCode CLI sem ponte verificada ao gateway só pode operar em projeto público
   com autorização explícita para custo pago e ilimitado. Esse modo usa a conta
@@ -82,8 +84,8 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.747.322 bytes; SHA-256
-`82DD0700A78D1C15A833068F464E0859FFA2BCEA0ED4F08F80404A3BF9934F00`).
+(120.747.346 bytes; SHA-256
+`9B6A7E9AA17DAB42D4B64C370A5211A1AE123DBBB69CD271D8FFA37DBAB67B46`).
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.

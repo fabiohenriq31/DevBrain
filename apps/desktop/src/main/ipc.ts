@@ -100,6 +100,21 @@ export const createHandlers = ({
     if (!gateway) throw new DevBrainError('PROVIDER_UNAVAILABLE', 'AI gateway unavailable');
     return gateway;
   };
+  const verifyInferenceProject = async (input: {
+    projectId?: string | undefined;
+    sessionId: string | null;
+  }): Promise<void> => {
+    if (input.projectId && !c().db.projects.findById(input.projectId))
+      throw new DevBrainError('NOT_FOUND', 'Project not found');
+    if (input.sessionId) {
+      const session = await c().sessions.get(input.sessionId);
+      if (!input.projectId || input.projectId !== session.projectId)
+        throw new DevBrainError(
+          'PERMISSION_DENIED',
+          'Inference must use its session project policy',
+        );
+    }
+  };
   const p = (): ProviderCatalog => {
     if (!catalog) throw new DevBrainError('PROVIDER_UNAVAILABLE', 'AI catalog unavailable');
     return catalog;
@@ -335,16 +350,7 @@ export const createHandlers = ({
       return input.policy;
     },
     'ai.inference.submit': async (input) => {
-      if (input.projectId && !c().db.projects.findById(input.projectId))
-        throw new DevBrainError('NOT_FOUND', 'Project not found');
-      if (input.sessionId) {
-        const session = await c().sessions.get(input.sessionId);
-        if (!input.projectId || input.projectId !== session.projectId)
-          throw new DevBrainError(
-            'PERMISSION_DENIED',
-            'Inference must use its session project policy',
-          );
-      }
+      await verifyInferenceProject(input);
       return { requestId: g().submit(input, (event) => emitAi('ai.inference.event', event)) };
     },
     'ai.inference.result': (input) => g().result(input.requestId),
@@ -356,7 +362,8 @@ export const createHandlers = ({
     'ai.usage.list': (input) => g().ledger.usage(input.requestId),
     'ai.credits.get': () => null,
     // ---- Phase 02 intelligence: every decision is made here, in the main process --------
-    'ai.routes.select': (input) => {
+    'ai.routes.select': async (input) => {
+      await verifyInferenceProject(input);
       const decision = g().explain(input);
       const top = decision.ranked[0];
       if (!top)
@@ -372,7 +379,10 @@ export const createHandlers = ({
         candidateRouteIds: decision.ranked.map((r) => r.routeId),
       };
     },
-    'ai.routes.explain': (input) => g().explain(input),
+    'ai.routes.explain': async (input) => {
+      await verifyInferenceProject(input);
+      return g().explain(input);
+    },
     'ai.projectPolicy.get': (input) => {
       if (!c().db.projects.findById(input.projectId))
         throw new DevBrainError('NOT_FOUND', 'Project not found');
