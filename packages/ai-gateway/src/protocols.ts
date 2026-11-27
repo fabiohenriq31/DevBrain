@@ -218,6 +218,44 @@ const build = (
 export class ProtocolTransport {
   constructor(private readonly http: SafeHttpTransport = new SafeHttpTransport()) {}
 
+  /** Read-only credential and model probe. Never performs billable inference. */
+  async probeModel(
+    endpoint: ProviderEndpoint,
+    upstreamModelId: string,
+    credential: string | null,
+  ): Promise<'available' | 'unavailable' | 'unknown'> {
+    const protocol = endpoint.protocol;
+    const base = endpoint.baseUrl.replace(/\/+$/, '');
+    const path = protocol === 'ollama' ? '/api/tags' : '/models';
+    const headers: Record<string, string> = { accept: 'application/json' };
+    if (credential) {
+      if (protocol === 'anthropic-messages') {
+        headers['x-api-key'] = credential;
+        headers['anthropic-version'] = '2023-06-01';
+      } else if (protocol === 'google-gemini') headers['x-goog-api-key'] = credential;
+      else headers.authorization = `Bearer ${credential}`;
+    }
+    const response = await this.http.json({
+      url: base + path,
+      method: 'GET',
+      headers,
+      allowLoopback: ['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname),
+      timeoutMs: 10_000,
+    });
+    if (response.status === 401 || response.status === 403)
+      throw new DevBrainError('CREDENTIAL_UNAVAILABLE', 'Provider rejected credentials');
+    if (response.status !== 200) return 'unknown';
+    const root = object(response.data);
+    if (root.error) throw apiError(200, root);
+    const items =
+      protocol === 'ollama' || protocol === 'google-gemini' ? array(root.models) : array(root.data);
+    if (!items.length) return 'unknown';
+    const ids = items.map((item) => text(object(item).id) || text(object(item).name));
+    return ids.some((id) => id === upstreamModelId || id === `models/${upstreamModelId}`)
+      ? 'available'
+      : 'unavailable';
+  }
+
   async generate(
     endpoint: ProviderEndpoint,
     request: InferenceRequest,

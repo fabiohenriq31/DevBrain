@@ -454,3 +454,43 @@ describe('routing recovery', () => {
     });
   });
 });
+
+describe('connection validation', () => {
+  it('probes a configured model without inference and enables the route only after validation', async () => {
+    let inferenceCalls = 0;
+    const upstream = await startServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      if (req.method === 'GET' && req.url === '/v1/models')
+        res.end(JSON.stringify({ data: [{ id: 'model-a' }] }));
+      else {
+        inferenceCalls++;
+        res.end(
+          JSON.stringify({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
+        );
+      }
+    });
+    try {
+      const gateway = new AiGateway(db().driver, async () => '');
+      gateway.saveEndpoint(endpoint(upstream.url));
+      gateway.saveConnection({
+        ...connection('connection-a', 'endpoint-a', 'provider-a'),
+        status: 'unknown',
+      });
+      gateway.saveModel(model('model-a', 'provider-a'));
+      gateway.saveRoute({
+        id: 'route-a',
+        modelId: 'model-a',
+        connectionId: 'connection-a',
+        priority: 0,
+        enabled: true,
+        localOnly: false,
+      });
+      const availability = await gateway.validateConnection('connection-a');
+      expect(availability.state).toBe('available');
+      expect(gateway.connections()[0]?.status).toBe('ready');
+      expect(inferenceCalls).toBe(0);
+    } finally {
+      await upstream.close();
+    }
+  });
+});

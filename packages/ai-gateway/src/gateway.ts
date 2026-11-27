@@ -5,6 +5,7 @@ import {
   InferenceRequestSchema,
   InferenceResultSchema,
   ModelDefinitionSchema,
+  ModelAvailabilitySchema,
   ModelRouteSchema,
   PrivacyPolicySchema,
   ProviderConnectionSchema,
@@ -16,6 +17,7 @@ import {
   type InferenceRequest,
   type InferenceResult,
   type ModelDefinition,
+  type ModelAvailability,
   type ModelRoute,
   type PrivacyPolicy,
   type ProviderConnection,
@@ -55,7 +57,7 @@ export class DeterministicRouter {
     privacy: PrivacyPolicy,
   ): Candidate[] {
     const eligible = candidates.filter(({ route, model, connection, endpoint }) => {
-      if (!route.enabled || !connection.enabled || connection.status === 'disabled') return false;
+      if (!route.enabled || !connection.enabled || connection.status !== 'ready') return false;
       if (request.modelId && model.id !== request.modelId) return false;
       if (policy.requireTools && !model.capabilities.tools) return false;
       if (!model.capabilities.input.includes('text') || !model.capabilities.output.includes('text'))
@@ -164,6 +166,9 @@ export class AiGateway {
 
   saveEndpoint(input: ProviderEndpoint): void {
     const endpoint = ProviderEndpointSchema.parse(input);
+    const url = new URL(endpoint.baseUrl);
+    if (url.search || url.hash)
+      throw new DevBrainError('VALIDATION_FAILED', 'Endpoint URL cannot contain query or fragment');
     const previous = this.endpoints().find((e) => e.id === endpoint.id);
     if (previous && previous.baseUrl !== endpoint.baseUrl)
       throw new DevBrainError(
@@ -197,6 +202,44 @@ export class AiGateway {
   }
   connections(): ProviderConnection[] {
     return read(this.db, 'ai_connections', ProviderConnectionSchema);
+  }
+  async validateConnection(id: string): Promise<ModelAvailability> {
+    const connection = this.connections().find((item) => item.id === id);
+    if (!connection) throw new DevBrainError('NOT_FOUND', 'Connection missing');
+    const endpoint = this.endpoints().find((item) => item.id === connection.endpointId);
+    const route = this.routes().find((item) => item.connectionId === id);
+    const model = this.models().find((item) => item.id === route?.modelId);
+    if (!endpoint || !model)
+      throw new DevBrainError('NOT_FOUND', 'Connection needs an endpoint and model route');
+    const credential = connection.credentialId
+      ? await this.resolveCredential(connection.credentialId, connection.providerId)
+      : null;
+    let state: 'available' | 'unavailable' | 'unknown';
+    try {
+      state = await this.protocol.probeModel(endpoint, model.upstreamModelId, credential);
+    } catch (error) {
+      if (DevBrainError.is(error) && error.code === 'CREDENTIAL_UNAVAILABLE')
+        this.saveConnection({
+          ...connection,
+          status: 'invalid-credential',
+          lastVerifiedAt: new Date().toISOString(),
+        });
+      throw error;
+    }
+    const now = new Date().toISOString();
+    this.saveConnection({
+      ...connection,
+      status: state === 'available' ? 'ready' : 'unavailable',
+      lastVerifiedAt: now,
+    });
+    return ModelAvailabilitySchema.parse({
+      modelId: model.id,
+      connectionId: id,
+      state,
+      observedAt: now,
+      retryAt: null,
+      evidence: 'provider-api',
+    });
   }
   removeConnection(id: string): void {
     if (this.routes().some((r) => r.connectionId === id))

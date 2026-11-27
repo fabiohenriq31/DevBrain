@@ -292,9 +292,11 @@ export const createHandlers = ({
     },
     'ai.connections.list': () => g().connections(),
     'ai.connections.save': (input) => {
-      g().saveConnection(input);
-      return input;
+      const connection = { ...input, status: 'unknown' as const, lastVerifiedAt: null };
+      g().saveConnection(connection);
+      return connection;
     },
+    'ai.connections.validate': (input) => g().validateConnection(input.id),
     'ai.connections.remove': (input) => {
       g().removeConnection(input.id);
       return { removed: true as const };

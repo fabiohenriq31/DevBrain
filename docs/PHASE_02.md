@@ -27,6 +27,9 @@ transporte remoto exige HTTPS, fixa o endereço resolvido, recusa endereços pri
 redirecionamentos e limita respostas. O ledger SQLite reserva cotas de forma atômica,
 reconcilia consumo conhecido e retém como incerto o consumo de chamadas interrompidas.
 As políticas determinísticas configuradas são recuperadas após reinício.
+Uma conexão salva pelo IPC começa como `unknown`; a validação consulta a lista de
+modelos sem gerar texto e só a marca `ready` quando o modelo configurado é encontrado.
+Provedores que não expõem uma lista compatível permanecem sem validação automática.
 
 O snapshot Models.dev contém **327 candidatos descobertos**. Eles permanecem
 desabilitados até configuração e validação próprias. Não há 20 conexões específicas
