@@ -5,10 +5,17 @@ múltiplos agentes de IA. Ela importa e entende projetos existentes, mantém mem
 contexto compartilhados, planeja o trabalho e distribui tarefas entre agentes CLI, APIs
 e modelos locais. Tudo isso acontece sob permissões, orçamento e aprovação humana.
 
-> **Estado atual: Etapa 00, a fundação arquitetural.** Existem o monorepo, os contratos
-> tipados, a segurança base, a persistência local, o cadastro de projetos e um shell
-> Electron seguro que funciona de ponta a ponta. A execução de agentes, a análise de
-> repositórios, a orquestração e o escritório virtual **ainda não existem**. Veja
+> **Estado atual: Fase 01 consolidada (build de desenvolvimento, não assinada).** O app
+> desktop para Windows já faz o seguinte:
+> - importa projetos;
+> - configura agentes CLI (Codex, Claude Code e Antigravity) por evidência de instalação;
+> - executa agentes reais com aprovação, streaming, cancelamento, histórico, checkpoint e
+>   diff Git;
+> - aplica permissões e orçamento (custo desconhecido nunca vale zero);
+> - recupera sessões após queda.
+>
+> Análise de repositórios, memória, planejamento e orquestração entre agentes são fases
+> futuras. Veja [docs/PHASE_01_FINAL_REPORT.md](docs/PHASE_01_FINAL_REPORT.md) e
 > [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Requisitos
@@ -27,6 +34,7 @@ pnpm install
 pnpm build            # contracts/packages (tsc -b) + app desktop (electron-vite)
 pnpm dev              # abre o app em modo desenvolvimento
 pnpm validate         # typecheck + lint + format + testes + secret scan + build + smoke
+pnpm --filter @devbrain/desktop dist:win   # instalador NSIS x64 (não assinado) em release/
 ```
 
 O binário do Electron é baixado na primeira execução (`electron` ≥ 44). Os dados locais
@@ -60,6 +68,7 @@ resources/                Ícones e recursos de empacotamento
 - [Fase 01](docs/PHASE_01.md): blocos de Claude, Codex e Antigravity.
 - [Decisões (ADRs)](docs/DECISIONS.md).
 - [Progresso](docs/PROGRESS.md).
+- [Relatório final da Fase 01](docs/PHASE_01_FINAL_REPORT.md).
 - [Propriedade de módulos](docs/OWNERSHIP.md).
 - [Integração e branches](docs/INTEGRATION.md).
 - [Regras para agentes](AGENTS.md).

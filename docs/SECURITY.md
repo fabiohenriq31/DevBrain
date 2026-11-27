@@ -117,6 +117,19 @@ restritivo). `planEnforcement` traduz isso para o motor:
 execução, e devolve as limitações para a UI mostrar. Nada é apresentado como isolado
 quando não é.
 
+### Linha de comando dos agentes (ADR-0021)
+
+- O prompt é texto não confiável e nunca pode virar flag: vai depois de `--` (Codex,
+  Claude Code) ou como valor `--print=<prompt>` (Antigravity).
+- Os modos vêm do plano autorizado: `read-only`/`plan` ou `workspace-write`/`acceptEdits`/
+  `accept-edits`. Autoaprovação (`--dangerously-*`, `auto`, `bypassPermissions`) nunca é
+  usada.
+- Esses modos são aplicados pelo próprio CLI e o DevBrain não os verifica. Por isso
+  essas integrações continuam `enforcement: none`, com aprovação por sessão.
+- Uma aprovação por sessão **não** é isolamento no nível do sistema operacional.
+- O ambiente do processo é uma allowlist (`PATH`, `SYSTEMROOT`, `TEMP`, `HOME`,
+  `USERPROFILE`, `APPDATA`…). Chaves de API do ambiente do DevBrain não são repassadas.
+
 ## Comandos
 
 - Comandos são `executable + args`, executados com `shell: false`. Strings de shell não
@@ -127,6 +140,17 @@ quando não é.
   `+refspec`, `reset --hard`, `clean`, `rebase`, `npm publish` e outros são classificados.
 - O `cwd` precisa estar confinado ao workspace. O ambiente é repassado por allowlist
   (`envAllowlist`); os valores são resolvidos no main.
+
+## Git
+
+Os canais `git.status` e `git.diff` são somente leitura e endereçados por `workspaceId`.
+O repositório é tratado como não confiável, porque um agente pode escrever em
+`.git/config`:
+- Todo comando Git do DevBrain roda com `-c core.fsmonitor=false -c diff.external=`.
+- O diff usa `--no-ext-diff --no-textconv`.
+- Um teste prova que um `fsmonitor` e um `textconv` maliciosos não executam.
+- O diff é lido até um teto, com margem para a redação, então redigido e cortado sem
+  quebrar UTF-8 (`truncated: true`).
 
 ## Credenciais
 
@@ -185,6 +209,15 @@ Fase 01: `AuthorizationService.acquireSlot` aplica o menor entre
 `maxConcurrentSessions` verificado do provedor, além do limite global. Orçamentos
 (`settings.budget` por dia e mês, `policy.budget` por agente) são checados antes de cada
 execução com base no custo **informado** pelos provedores (`BUDGET_EXCEEDED`).
+
+Consolidação (ADR-0020): **custo desconhecido não é custo zero**.
+- Toda execução de prompt iniciada é contabilizada, com custo `NULL` quando o provedor não
+  o informa, e aparece como "custo desconhecido" na UI.
+- Com qualquer teto configurado, prompts para agentes que não informam custo são bloqueados
+  antes de iniciar (`BUDGET_UNENFORCEABLE`). A exceção é o consentimento explícito
+  `budget.allowWithoutCostGuarantee`, rotulado "execuções SEM garantia de custo". Com ele,
+  o teto vale apenas para custos informados, e o DevBrain não afirma garantia.
+- Nenhum adaptador integrado informa custo hoje, e o DevBrain nunca estima custo.
 
 ## Recuperação de falhas
 

@@ -57,6 +57,13 @@ ficaram prontos no Core; o Codex os consome.
 | A7 | Smoke E2E Electron (CDP) + testes Vitest cobrindo o fluxo principal | ✅ Entregue |
 | A8 | Ícones e recursos em `resources/` | ✅ Entregue |
 
+## Consolidação
+
+Feita na `phase-01/consolidation` (2026-11-27), a partir da `phase-01/antigravity-desktop`,
+que já continha os três blocos. Resultado, evidências e limitações estão em
+[PHASE_01_FINAL_REPORT.md](PHASE_01_FINAL_REPORT.md). O merge em `develop` e em `main`
+continua sendo decisão do proprietário.
+
 ## Integração ao final da fase
 
 1. Merge na ordem `claude-core` → `codex-engine` → `antigravity-desktop` em `develop`,

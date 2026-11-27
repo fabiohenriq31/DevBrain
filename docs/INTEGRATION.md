@@ -114,9 +114,24 @@ Registre aqui os pedidos de mudança em arquivos de outro dono.
 | 2026-11-27 | C → A | `apps/desktop/src/main/index.ts`: trocar `createDatabase` por `startCore()` e fechar o Core no `will-quit` (desligamento limpo). Mudança mínima, sem tocar em janela ou `webPreferences` | Feito na `phase-01/claude-core`; revisar no PR |
 | 2026-11-27 | C → A | `apps/desktop/package.json` e `electron.vite.config.ts`: acrescentar `@devbrain/core` às dependências e à lista `WORKSPACE` (empacotado no main) | Feito na `phase-01/claude-core`; revisar no PR |
 | 2026-11-27 | C → A | UI: aprovações (`approval.requested` / `approval.decided`), escopo `once`/`session`/`project`, limitações de enforcement (`plan.limitations`) e status `interrupted` com botão "iniciar nova sessão a partir do checkpoint" (`resumeFromSessionId`) | Concluído na `phase-01/antigravity-desktop` |
-| 2026-11-27 | C → X | Usar `core.authorization`, `core.sessions.record*`, `core.providers.recordEvidence` e `acquireSlot` (seção acima) | Aberto |
+| 2026-11-27 | C → X | Usar `core.authorization`, `core.sessions.record*`, `core.providers.recordEvidence` e `acquireSlot` (seção acima) | Revisado na consolidação: o motor usa todos. Adicionado `costBearing` em `authorizeExecution` (ADR-0020) |
 | 2026-11-27 | X → C | Ligar `OperationalExecutionService` aos handlers de descoberta/execução, repassar `execution.event` e encerrar processos antes do Core | PR #2 revisado por A; mantido em `phase-01/antigravity-desktop` |
 | 2026-11-27 | X → A | Declarar os pacotes do motor no app; revisar a UX de reconexão por `seq` | Concluído na `phase-01/antigravity-desktop` (`mergeExecutionEvents` + `TerminalPane`) |
 | 2026-11-27 | X → A/C | Declarar o empacotador Windows com versão fixa, licença e instalação segura | Revisado e ampliado com `icon.ico`, `deleteAppDataOnUninstall: false` e `THIRD_PARTY_NOTICES.md` |
-| 2026-11-27 | A → C | Revisar commit isolado de contratos `0.3.0` (`git.status` e `git.diff` somente leitura por `workspaceId`, diff redigido e limitado em `maxBytes`) e handlers correspondentes em `apps/desktop/src/main/ipc.ts` (incluindo gravação de evidência real de `installed` em `providers.checkDependencies`) | Em revisão no PR da `phase-01/antigravity-desktop` |
-| 2026-11-27 | A → C | `packages/database/src/repositories/permissions.ts` (`SqlitePermissionGrantRepository.list`): quando `includeInactive === true`, `params` inclui `{ now: filter.now }` sem `:now` na query SQL, fazendo `node:sqlite` lançar erro de parâmetro nomeado desconhecido (`Unexpected storage failure`). A UI usa `includeInactive: false` + `audit.list` até correção pelo dono | Aberto |
+| 2026-11-27 | A → C | Revisar commit isolado de contratos `0.3.0` (`git.status` e `git.diff` somente leitura por `workspaceId`, diff redigido e limitado em `maxBytes`) e handlers correspondentes em `apps/desktop/src/main/ipc.ts` (incluindo gravação de evidência real de `installed` em `providers.checkDependencies`) | Revisado na consolidação. Aceito; o diff passou a ser lido de forma limitada (`diffBounded`), redigido com margem e cortado sem quebrar UTF-8; Git endurecido contra configuração do repositório (ADR-0021) |
+| 2026-11-27 | A → C | `packages/database/src/repositories/permissions.ts` (`SqlitePermissionGrantRepository.list`): quando `includeInactive === true`, `params` inclui `{ now: filter.now }` sem `:now` na query SQL, fazendo `node:sqlite` lançar erro de parâmetro nomeado desconhecido (`Unexpected storage failure`). A UI usa `includeInactive: false` + `audit.list` até correção pelo dono | Corrigido na `phase-01/consolidation`: `now` só é vinculado com a cláusula que o usa; teste de regressão em `database.test.ts` e `ipc.test.ts`; a UI voltou a listar o histórico completo (`includeInactive: true`) |
+
+## Consolidação (`phase-01/consolidation`)
+
+Mudanças em arquivos de outros donos, todas revisáveis no PR de consolidação:
+
+| Arquivo (dono) | Mudança | Motivo |
+| --- | --- | --- |
+| `packages/execution-engine` (Codex) | `buildAgentCommand`: prompt após `--` ou em `--print=`, Claude com `--verbose` e modo pelo plano, `agy` com `--mode` explícito e JSON; parsing de mensagens e uso do Claude e do Antigravity; `costBearing` | ADR-0020, ADR-0021 |
+| `packages/provider-sdk` (Codex) | `costModel` `unknown` para Codex e Claude; `agy` verificado com `--help`, documentação oficial; `execute` documentado como não suportado nos adaptadores CLI | ADR-0020, ADR-0021 |
+| `packages/git-engine` (Codex) | `SAFE_CONFIG` em todo comando, `--no-textconv`, `diffBounded` | ADR-0021 |
+| `apps/desktop/src/main/ipc.ts` (Claude) | `git.diff` limitado e redigido com margem | ADR-0021 |
+| `apps/desktop/src/renderer` (Antigravity) | Grants com `includeInactive: true`; opção "execuções SEM garantia de custo"; contagem de custo desconhecido; mensagens de `BUDGET_UNENFORCEABLE` | Correção obrigatória e ADR-0020. Layout preservado |
+| `scripts/verify-real-agent.mjs` (Codex) | Verificação real parametrizada por adaptador | Validação externa |
+
+Contratos: **0.4.0** (aditivo; ver CONTRACTS.md).

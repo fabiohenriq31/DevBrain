@@ -239,3 +239,74 @@ acesso irrestrito ao shell pelo renderer).
    em esquema com lista branca de chaves; nenhum segredo ou caminho sensível passa por
    `localStorage`. Custos `null` vindos de provedores CLI são sempre apresentados como
    "custo desconhecido / não informado pelo provedor", nunca como zero.
+
+## ADR-0020: custo desconhecido não é custo zero
+
+**Status:** aceita (Fase 01, consolidação)
+
+**Contexto.** Nenhum adaptador CLI integrado informa custo por execução: Codex informa só
+tokens, e o `total_cost_usd` do Claude Code não é cobrança quando a autenticação é por
+assinatura. O Antigravity informa tokens. O orçamento anterior somava apenas custos
+informados, de modo que execuções sem custo contavam como zero e um teto configurado
+parecia garantido sem ser.
+
+**Decisão.**
+
+1. Toda execução de prompt que chegou a iniciar gera uma linha em `usage_records`, com
+   custo `NULL` quando o provedor não o informa. O mesmo vale para execuções de prompt
+   interrompidas por queda do app. `UsageSummary.unknownCostExecutions` conta essas
+   execuções, e a UI mostra "custo desconhecido" e avisa que o total é um limite inferior.
+2. Com qualquer teto aplicável (diário ou mensal global, ou diário e por execução da
+   política), uma execução com custo (prompt para agente) cujo `costModel` não seja
+   `free` nem `local` é bloqueada com `BUDGET_UNENFORCEABLE` antes de iniciar.
+3. A única exceção é o consentimento explícito `settings.budget.allowWithoutCostGuarantee`,
+   rotulado na UI como "execuções SEM garantia de custo". Com ele, o teto é verificado só
+   contra custos informados, e a auditoria `execution.authorized` registra
+   `costGuaranteed: false`.
+4. `costModel` dos adaptadores Codex e Claude Code passa a `unknown`, porque a cobrança
+   depende de como o usuário se autenticou (assinatura ou chave), o que o DevBrain não
+   verifica. O DevBrain nunca estima custo.
+5. Comandos simples (`kind: 'command'`) executam programas locais e não passam pelo
+   bloqueio de custo.
+
+**Consequências.** Quem configura um teto e usa agentes CLI precisa remover o teto ou
+consentir de forma informada. Nenhum orçamento é apresentado como garantido sem ser.
+
+## ADR-0021: linha de comando dos agentes e inspeção Git em repositórios não confiáveis
+
+**Status:** aceita (Fase 01, consolidação)
+
+**Contexto.** A revisão de segurança da consolidação encontrou quatro problemas:
+
+1. O prompt, que é texto não confiável, era passado como argumento posicional. Um prompt
+   iniciado por `--` podia ser lido como flag do CLI (por exemplo
+   `--dangerously-bypass-approvals-and-sandbox`).
+2. O Claude Code em `-p` com `stream-json` exige `--verbose`. Com
+   `--permission-mode default`, que não tem a quem perguntar, as edições eram negadas.
+3. O `agy -p` sem modo explícito usa `auto`, onde disponível, segundo a documentação
+   oficial de modo headless. `agy` também não documenta `--version`.
+4. O `git status` e o `git diff` do próprio DevBrain liam a configuração do repositório,
+   que um agente pode alterar. `core.fsmonitor` e drivers `textconv` executariam programas
+   fora de qualquer sandbox do agente.
+
+**Decisão.**
+
+- `buildAgentCommand` (execution-engine) é a única fonte das linhas de comando e tem teste
+  próprio:
+  - Codex: `exec --json --sandbox <read-only|workspace-write> -C <cwd> -- <prompt>`.
+  - Claude Code: `-p --output-format stream-json --verbose --permission-mode
+    <plan|acceptEdits> -- <prompt>`.
+  - Antigravity: `--output-format json --mode <plan|accept-edits> --print-timeout <n>s
+    --print=<prompt>`.
+- Modos de autoaprovação ou bypass nunca são usados.
+- Esses modos não fazem o DevBrain afirmar isolamento: Codex no Windows, Claude Code e
+  Antigravity continuam com `enforcement: none` e exigem aprovação por sessão.
+- A presença do `agy` é verificada com `--help`, e a versão fica desconhecida.
+- O sucesso do Antigravity exige `status: "SUCCESS"` no JSON. Texto livre na saída não basta.
+- `LocalGitService` força `-c core.fsmonitor=false -c diff.external=` em todo comando e usa
+  `--no-ext-diff --no-textconv` no diff.
+- `diffBounded` lê no máximo o teto e trunca sem falhar e sem cortar UTF-8.
+- O IPC lê uma margem extra, redige e só então corta, para que um segredo na fronteira
+  não sobreviva parcialmente.
+- `ProviderAdapter.execute` dos adaptadores CLI continua `UNSUPPORTED` e está documentado:
+  o único caminho de execução é `OperationalExecutionService`.

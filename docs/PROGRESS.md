@@ -52,7 +52,7 @@ simulada e reinício do app real).
 | Logger rotativo com redação | ✅ | `workspace-access.test.ts` |
 | 35 canais IPC novos ligados no main | ✅ | `tests/integration/core.test.ts` (valida schemas de saída), smoke |
 | Contratos 0.2.0 compatíveis com dados 0.1.0 | ✅ | `compat.test.ts` (6) |
-| Execução real de agentes, adaptadores CLI | ⏳ | Fora deste bloco (Codex). Canais respondem `UNSUPPORTED` |
+| Execução real de agentes, adaptadores CLI | ⏳ | Fora deste bloco (Codex). Entregue depois; ver Consolidação |
 | UI completa | ⏳ | Fora deste bloco (Antigravity) |
 | C8: revisão de segurança dos PRs de Codex e Antigravity | ⏳ | Quando os PRs existirem |
 
@@ -91,3 +91,25 @@ API paga foi usada.
 | A8 — Identidade visual, ícones de autoria própria (`resources/icon.svg`, `icon.png`, `icon.ico`) e empacotamento Windows x64 NSIS (`deleteAppDataOnUninstall: false`, `THIRD_PARTY_NOTICES.md`) | ✅ | `resources/*`, `apps/desktop/electron-builder.yml`, instalador NSIS testado (instalação, execução, persistência e desinstalação preservando `%APPDATA%\DevBrain AI`) |
 
 Nota de validação de adaptadores no ambiente atual: `providers.checkDependencies` foi executado contra `openai-codex-cli`, `claude-code-cli` e `google-antigravity-cli`; nesta estação Windows atual nenhum dos executáveis (`codex`, `claude`, `agy`) está instalado no `PATH`, portanto o aplicativo reporta honestamente `missing-dependency` ("Não instalado") sem simular resultados.
+
+### Consolidação: `phase-01/consolidation` (2026-11-27)
+
+Base: `bc6377a` (histórico dos três agentes). Detalhes em
+[PHASE_01_FINAL_REPORT.md](PHASE_01_FINAL_REPORT.md).
+
+Validação única: `pnpm validate` passou, com **122 testes** em 14 arquivos e smoke com
+**37 verificações**. Também passaram o `dist:win`, o smoke contra o app instalado, a
+instalação e o fechamento com reabertura em perfil temporário, e a desinstalação com
+preservação dos dados.
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Correção de `GrantRepository.list` (`includeInactive`) e remoção do contorno na UI | ✅ | `database.test.ts`, `ipc.test.ts` |
+| Custo desconhecido não é zero: contabilização, `BUDGET_UNENFORCEABLE`, consentimento explícito, UI (contratos 0.4.0) | ✅ | `core.test.ts`, `compat.test.ts`; fluxo real (bloqueio antes de iniciar) |
+| Linhas de comando dos agentes sem injeção de flags e sem autoaprovação | ✅ | `engine.test.ts` |
+| Git: configuração do repositório não executa programas; diff limitado sem falhar | ✅ | `git.test.ts` |
+| Codex real: aprovação, edição, streaming, alterações, preservação da mudança do usuário, diff, checkpoint, histórico, cancelamento | ✅ | `scripts/verify-real-agent.mjs openai-codex-cli` |
+| Claude Code real | ⚠️ | Flags aceitas; CLI standalone não autenticado nesta máquina (falha reportada, sem simulação) |
+| Antigravity CLI real | ⏸️ | `agy` não instalado; flags conferidas na documentação oficial |
+| Instalador NSIS consolidado (não assinado) | ✅ | SHA-256 `F5DB492DA22E4C36EA4E6153250DFE707FFC8587F2AC9D8B61630151221E2A22` |
+| CI no GitHub, navegação visual manual completa | ⏸️ | Não executados |

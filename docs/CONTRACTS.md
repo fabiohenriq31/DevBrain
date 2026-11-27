@@ -1,6 +1,6 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.3.0**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.4.0**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
 
 Os contratos são a única interface entre os módulos dos três agentes. São escritos em
@@ -135,6 +135,20 @@ isso fizer sentido (por exemplo, exibir "desconhecido" na UI). O main recusa um 
 com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
+
+### 0.4.0 (Fase 01, consolidação)
+
+Aditivo. Payloads gravados pela 0.3.0 continuam válidos (campos novos têm `.default()`);
+ver `packages/contracts/src/compat.test.ts`.
+
+- `ApplicationSettings.budget.allowWithoutCostGuarantee` (padrão `false`) e o mesmo campo
+  opcional em `SettingsPatch.budget`: consentimento explícito para rodar execuções de
+  agentes cujo custo não é informado enquanto há um teto configurado.
+- `UsageSummary.unknownCostExecutions` (padrão `0`): execuções do período sem custo
+  informado. Quando for maior que zero, `cost` é apenas um limite inferior.
+- `ErrorCode`: `BUDGET_UNENFORCEABLE`, quando há teto financeiro e a integração não
+  informa custo, de modo que o teto não pode ser aplicado.
+- Motivo: regra da consolidação "custo desconhecido não equivale a custo zero" (ADR-0020).
 
 ### 0.3.0 (Fase 01, bloco Antigravity, aguardando revisão de Claude e Codex)
 
