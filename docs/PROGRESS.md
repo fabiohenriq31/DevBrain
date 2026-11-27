@@ -70,12 +70,12 @@ simulada e reinício do app real).
 | CI | 🟡 | Workflow Windows existente; execução remota do PR ainda não verificada |
 | Instalador Windows | 🟡 | PR #2 gera NSIS sem assinatura; executável empacotado passou no smoke, pendente revisão |
 
-Validação externa isolada: `codex exec --json --sandbox workspace-write`, autenticado
-pela conta ChatGPT, alterou `counter.js` num diretório temporário (adicionou
-`triple(n)`), emitiu `item.completed` de `file_change` e `turn.completed`, e terminou
-com exit code 0. O comando foi executado diretamente para verificar o protocolo
-oficial; o caminho completo via `OperationalExecutionService` e IPC ainda precisa
-ser validado. Nenhuma chave de API paga foi usada.
+Validação externa isolada: `scripts/verify-real-agent.mjs` criou projeto Git temporário,
+usou o Core real e `OperationalExecutionService` para executar Codex autenticado pela
+conta ChatGPT. Alterou `counter.js` (adicionou `triple(n)`), persistiu 24 eventos com
+`file-change`, resultado `completed`/exit code 0 e um checkpoint. O PR #2 validou
+separadamente o caminho IPC completo com um processo Node controlado. Nenhuma chave de
+API paga foi usada.
 
 ### Antigravity: `phase-01/antigravity-desktop`
 
