@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import * as C from './entities/core.js';
+import * as R from './entities/ai-resource.js';
 import { AgentSchema } from './entities/agent.js';
 import {
   CheckpointSchema,
@@ -390,6 +391,131 @@ export const IPC_CHANNELS = {
     GitDiffSchema,
     'Unified diff of unstaged tracked changes in a workspace (redacted, size-capped).',
   ),
+  // ---- 0.5.0: AI resource engine -----------------------------------------
+  'ai.catalog.list': channel(
+    Empty,
+    z.array(R.ProviderCatalogEntrySchema),
+    'Discovered provider catalog.',
+  ),
+  'ai.catalog.import': channel(
+    z.object({ sourceId: R.AiResourceIdSchema, data: z.string().max(5_000_000) }),
+    R.CatalogSnapshotSchema,
+    'Import a versioned catalog snapshot.',
+  ),
+  'ai.connections.list': channel(
+    Empty,
+    z.array(R.ProviderConnectionSchema),
+    'Configured inference connections.',
+  ),
+  'ai.connections.save': channel(
+    R.ProviderConnectionSchema,
+    R.ProviderConnectionSchema,
+    'Save a connection without a secret value.',
+  ),
+  'ai.connections.remove': channel(
+    z.object({ id: R.AiResourceIdSchema }),
+    z.object({ removed: z.literal(true) }),
+    'Remove a connection.',
+  ),
+  'ai.connections.validate': channel(
+    z.object({ id: R.AiResourceIdSchema }),
+    R.ModelAvailabilitySchema,
+    'Validate a configured connection.',
+  ),
+  'ai.models.list': channel(
+    z.object({ connectionId: R.AiResourceIdSchema.optional() }),
+    z.array(R.ModelDefinitionSchema),
+    'Discovered models.',
+  ),
+  'ai.models.availability': channel(
+    z.object({ modelId: R.AiResourceIdSchema, connectionId: R.AiResourceIdSchema }),
+    R.ModelAvailabilitySchema,
+    'Observed model availability.',
+  ),
+  'ai.inference.submit': channel(
+    R.InferenceRequestSchema,
+    z.object({ requestId: R.AiResourceIdSchema }),
+    'Start inference.',
+  ),
+  'ai.inference.result': channel(
+    z.object({ requestId: R.AiResourceIdSchema }),
+    R.InferenceResultSchema.nullable(),
+    'Read inference result.',
+  ),
+  'ai.inference.cancel': channel(
+    z.object({ requestId: R.AiResourceIdSchema }),
+    z.object({ cancelled: z.boolean() }),
+    'Cancel inference.',
+  ),
+  'ai.inference.attempts': channel(
+    z.object({ requestId: R.AiResourceIdSchema }),
+    z.array(R.FallbackAttemptSchema),
+    'Fallback attempt history.',
+  ),
+  'ai.quota.definitions': channel(
+    z.object({ scopeId: R.AiResourceIdSchema.optional() }),
+    z.array(R.QuotaDefinitionSchema),
+    'Published quota definitions.',
+  ),
+  'ai.quota.observations': channel(
+    z.object({ quotaId: R.AiResourceIdSchema }),
+    z.array(R.QuotaObservationSchema),
+    'Observed quota state.',
+  ),
+  'ai.quota.reservations': channel(
+    z.object({ quotaId: R.AiResourceIdSchema }),
+    z.array(R.QuotaReservationSchema),
+    'Outstanding reservations.',
+  ),
+  'ai.usage.list': channel(
+    z.object({ requestId: R.AiResourceIdSchema }),
+    z.array(R.UsageRecordSchema),
+    'Measured usage.',
+  ),
+  'ai.credits.get': channel(
+    z.object({ accountId: R.AiResourceIdSchema }),
+    R.CreditBalanceSchema.nullable(),
+    'Observed credit balance.',
+  ),
+  'ai.routes.select': channel(
+    R.InferenceRequestSchema,
+    R.RoutingDecisionSchema,
+    'Select a model route.',
+  ),
+  'ai.local.list': channel(Empty, z.array(R.LocalRuntimeSchema), 'Local inference runtimes.'),
+  'ai.local.models': channel(
+    z.object({ runtimeId: R.AiResourceIdSchema }),
+    z.array(R.LocalModelSchema),
+    'Installed local models.',
+  ),
+  'ai.local.pull': channel(
+    z.object({
+      runtimeId: R.AiResourceIdSchema,
+      modelId: R.AiResourceIdSchema,
+      confirm: z.literal(true),
+    }),
+    z.object({ operationId: R.AiResourceIdSchema }),
+    'Download an explicitly selected local model.',
+  ),
+  'ai.local.remove': channel(
+    z.object({
+      runtimeId: R.AiResourceIdSchema,
+      modelId: R.AiResourceIdSchema,
+      confirm: z.literal(true),
+    }),
+    z.object({ removed: z.boolean() }),
+    'Remove a local model after confirmation.',
+  ),
+  'ai.local.benchmark': channel(
+    z.object({ runtimeId: R.AiResourceIdSchema, modelId: R.AiResourceIdSchema }),
+    R.BenchmarkResultSchema,
+    'Measure local model performance.',
+  ),
+  'ai.checkpoints.latest': channel(
+    z.object({ sessionId: SessionIdSchema }),
+    R.TaskCheckpointSchema.nullable(),
+    'Latest task checkpoint.',
+  ),
 } as const satisfies Record<string, ChannelDefinition>;
 
 export type IpcChannelKey = keyof typeof IPC_CHANNELS;
@@ -408,6 +534,12 @@ export const IPC_EVENTS = {
   'sessions.changed': AgentSessionSchema,
   /** @since 0.2.0 */
   'providers.changed': z.object({ providerId: ProviderIdSchema }),
+  'ai.inference.event': R.InferenceEventSchema,
+  'ai.local.pullProgress': z.object({
+    operationId: R.AiResourceIdSchema,
+    completed: z.number().nonnegative(),
+    total: z.number().nonnegative().nullable(),
+  }),
 } as const satisfies Record<string, z.ZodType>;
 
 export type IpcEventKey = keyof typeof IPC_EVENTS;

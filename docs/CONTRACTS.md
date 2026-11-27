@@ -1,6 +1,6 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.4.0**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.5.0**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
 
 Os contratos são a única interface entre os módulos dos três agentes. São escritos em
@@ -135,6 +135,16 @@ isso fizer sentido (por exemplo, exibir "desconhecido" na UI). O main recusa um 
 com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
+
+### 0.5.0 (Fase 02, base compartilhada)
+
+Aditivo. `entities/ai-resource.ts` introduz catálogo, conexões, modelos, preços com
+desconhecido explícito, cotas, reservas, consumo, crédito, políticas, inferência, runtime
+local, benchmark e checkpoint de tarefa. `services.ts` define as interfaces para
+descoberta, conexões, inferência e streaming, cancelamento, ledger, seleção, runtime e
+contexto. `ipc.ts` acrescenta 25 canais `ai.*` e dois eventos. Canais sem handler retornam
+`UNSUPPORTED`; a presença no contrato não implica implementação. `CredentialReference`
+continua sendo o contrato do cofre da Fase 01, sem material secreto.
 
 ### 0.4.0 (Fase 01, consolidação)
 
