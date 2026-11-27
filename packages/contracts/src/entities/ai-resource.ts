@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { CredentialIdSchema, SessionIdSchema, TimestampSchema } from '../common.js';
+import {
+  CredentialIdSchema,
+  ProjectIdSchema,
+  SessionIdSchema,
+  TimestampSchema,
+} from '../common.js';
+import { TaskProfileSchema } from './task.js';
 
 // Phase 02 wire contracts. Unknown commercial terms remain null until verified.
 const Id = z.string().regex(/^[a-z0-9][a-z0-9._:-]{1,127}$/);
@@ -82,6 +88,21 @@ export const PricingDefinitionSchema = z.object({
   cachedInputPerMillion: NonNegative.nullable(),
   verifiedAt: TimestampSchema.nullable(),
   sourceUrl: SafeUrl.nullable(),
+  /**
+   * @since 0.7.0 — prices that apply when the prompt exceeds `aboveInputTokens` (long-context
+   * tiers). The highest matching tier wins; absent = flat pricing.
+   */
+  contextTiers: z
+    .array(
+      z.object({
+        aboveInputTokens: PositiveInt,
+        inputPerMillion: NonNegative,
+        outputPerMillion: NonNegative,
+        cachedInputPerMillion: NonNegative.nullable(),
+      }),
+    )
+    .max(8)
+    .optional(),
 });
 export type PricingDefinition = z.infer<typeof PricingDefinitionSchema>;
 
@@ -124,6 +145,10 @@ export const ModelRouteSchema = z.object({
 export type ModelRoute = z.infer<typeof ModelRouteSchema>;
 
 export const QuotaScopeSchema = z.enum([
+  /** @since 0.7.0 — DevBrain-wide limit (e.g. the global budget). */
+  'global',
+  /** @since 0.7.0 — one agent/inference session. */
+  'session',
   'account',
   'organization',
   'credential',
@@ -152,6 +177,12 @@ export const QuotaDefinitionSchema = z.object({
   periodSeconds: PositiveInt.nullable(),
   sourceUrl: SafeUrl.nullable(),
   verifiedAt: TimestampSchema.nullable(),
+  /**
+   * @since 0.7.0 — who imposes the limit. `provider`: published or observed provider limit
+   * (enforced by the provider; DevBrain only tracks it). `devbrain`: a limit DevBrain itself
+   * enforces before dispatch. Missing = `provider`. `currency` amounts are integer micro-units.
+   */
+  origin: z.enum(['provider', 'devbrain']).optional(),
 });
 export type QuotaDefinition = z.infer<typeof QuotaDefinitionSchema>;
 export const QuotaObservationSchema = z.object({
@@ -218,6 +249,24 @@ export const RoutingPolicySchema = z.object({
   privacyPolicyId: Id,
   maxAttempts: PositiveInt.max(10),
   requireTools: z.boolean(),
+  /** @since 0.7.0 — intelligent routing preset; missing = derived from `strategy`. */
+  preset: z
+    .enum(['free-only', 'local-only', 'economy', 'balanced', 'quality', 'custom'])
+    .optional(),
+  /** @since 0.7.0 — weights for `custom` (0..1 each); ignored by other presets. */
+  weights: z
+    .object({
+      quality: NonNegative.max(1),
+      cost: NonNegative.max(1),
+      latency: NonNegative.max(1),
+      reliability: NonNegative.max(1),
+      quota: NonNegative.max(1),
+      continuity: NonNegative.max(1),
+    })
+    .partial()
+    .optional(),
+  /** @since 0.7.0 — evidence-based exploration among already-eligible free/local routes. */
+  allowExploration: z.boolean().optional(),
 });
 export type RoutingPolicy = z.infer<typeof RoutingPolicySchema>;
 export const RoutingDecisionSchema = z.object({
@@ -246,6 +295,10 @@ export const InferenceRequestSchema = z.object({
   routingPolicyId: Id,
   idempotencyKey: z.string().max(200).nullable(),
   deadlineMs: z.number().int().min(1000).max(600_000).optional(),
+  /** @since 0.7.0 — project whose privacy and budget policies apply (main-process enforced). */
+  projectId: ProjectIdSchema.optional(),
+  /** @since 0.7.0 — what the request is for; drives eligibility and scoring. */
+  task: TaskProfileSchema.optional(),
 });
 export type InferenceRequest = z.infer<typeof InferenceRequestSchema>;
 export const InferenceErrorSchema = z.object({
