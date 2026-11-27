@@ -597,6 +597,11 @@ export class AiGateway {
           }
           if (!generation)
             throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Inference ended without a result');
+          if (generation.quotaHeaders)
+            this.ledger.observeResponseHeaders(
+              candidate.demands.map((demand) => demand.quotaId),
+              generation.quotaHeaders,
+            );
           const definitions = new Map(this.ledger.definitions().map((d) => [d.id, d]));
           const costMicros = this.engine.budget.measured(candidate.model, candidate.local, {
             inputTokens: generation.inputTokens,

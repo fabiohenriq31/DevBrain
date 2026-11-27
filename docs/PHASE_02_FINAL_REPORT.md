@@ -11,7 +11,10 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
   redirecionamentos; protocolos Chat Completions, Responses, Anthropic Messages,
   Gemini e Ollama; streaming, cancelamento e fallback.
 - Ledger SQLite com reservas atômicas, recuperação conservadora após interrupção,
-  políticas financeiras e roteamento explicável. A interface usa o Core para
+  políticas financeiras e roteamento explicável. A migration 005 guarda
+  observações reais de `x-ratelimit-remaining-requests` e
+  `x-ratelimit-remaining-tokens` quando há uma definição de cota correspondente.
+  A interface usa o Core para
   credenciais criptografadas, sessões e projetos.
 - 327 candidatos do snapshot Models.dev, separados de conexões ativas. O catálogo
   instalado inclui 22 receitas de conexão documentadas. A ausência de preço ou
@@ -61,7 +64,7 @@ desconhecidos até verificação explícita por conta e modelo.
 
 ## Validação e aceite
 
-`pnpm validate`: TypeScript, lint, Prettier, 194 testes, varredura de segredos,
+`pnpm validate`: TypeScript, lint, Prettier, 195 testes, varredura de segredos,
 build e smoke Electron aprovados na consolidação. O smoke cobre a regressão
 da Fase 01, armazenamento cifrado, sessões, recuperação, execução e UI.
 
@@ -95,8 +98,9 @@ tocados.
 1. Conectar OpenCode ao `LocalGatewayServer` com credencial efêmera, política
    vinculada ao projeto/sessão e isolamento efetivo de ferramentas. O CLI atual
    **não** oferece essa garantia.
-2. Persistir observações reais de cabeçalhos de cota e custos reportados pelos
-   provedores; `ai.quota.observations` ainda retorna lista vazia.
+2. Ampliar a leitura de cabeçalhos específicos de provedores, horário de
+   renovação e custos reportados; observações só surgem quando há definição
+   explícita e cabeçalho reconhecido.
 3. Integrar os demais canais IPC 0.7.0 à UI, contexto e handoff ao fluxo real,
    descoberta de modelos e os runtimes locais adicionais.
 4. Validar dois provedores independentes e fallback real com contas autorizadas.

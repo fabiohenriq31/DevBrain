@@ -275,7 +275,7 @@ const expected = {
   unknownRejected: true,
   adaptersKnown: true,
   settingsOk: true,
-  health: 'ok:v4',
+  health: 'ok:v5',
   providerReadiness: 'configured',
   agentOk: true,
   credentialStored: 'os-encrypted',

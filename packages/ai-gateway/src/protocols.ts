@@ -14,6 +14,8 @@ export interface Generation {
   inputTokens: number | null;
   outputTokens: number | null;
   finishReason: 'stop' | 'length' | 'tool-call' | 'content-filter' | 'unknown';
+  /** Only non-secret, recognized rate-limit headers; no arbitrary response metadata. */
+  quotaHeaders?: Record<string, string>;
 }
 export type GenerationPart =
   { type: 'delta'; text: string } | { type: 'done'; generation: Generation };
@@ -53,6 +55,17 @@ const finish = (value: unknown): Generation['finishReason'] => {
   if (reason.includes('tool')) return 'tool-call';
   if (reason.includes('filter') || reason.includes('safety')) return 'content-filter';
   return 'unknown';
+};
+
+const quotaHeaders = (
+  headers: Record<string, string | string[] | undefined>,
+): Record<string, string> => {
+  const result: Record<string, string> = {};
+  for (const name of ['x-ratelimit-remaining-requests', 'x-ratelimit-remaining-tokens']) {
+    const value = headers[name];
+    if (typeof value === 'string' && /^\d{1,15}$/.test(value)) result[name] = value;
+  }
+  return result;
 };
 
 const normalized = (protocol: ProviderEndpoint['protocol'], data: unknown): Generation => {
@@ -279,7 +292,10 @@ export class ProtocolTransport {
     });
     if (response.status >= 400 || object(response.data).error)
       throw apiError(response.status, response.data, response.headers['retry-after']);
-    return normalized(endpoint.protocol, response.data);
+    return {
+      ...normalized(endpoint.protocol, response.data),
+      quotaHeaders: quotaHeaders(response.headers),
+    };
   }
 
   async *stream(
@@ -392,7 +408,13 @@ export class ProtocolTransport {
       throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Provider stream ended without output');
     yield {
       type: 'done',
-      generation: { content, inputTokens, outputTokens, finishReason: reason },
+      generation: {
+        content,
+        inputTokens,
+        outputTokens,
+        finishReason: reason,
+        quotaHeaders: quotaHeaders(response.headers),
+      },
     };
   }
 }

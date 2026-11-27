@@ -119,7 +119,7 @@ preservação dos dados.
 ### Consolidação: `phase-02/consolidation` (2026-11-27)
 
 - Merge da inteligência Claude sobre `develop` com a UI Antigravity e o gateway Codex, preservando o histórico.
-- `pnpm validate` aprovado com 194 testes.
+- `pnpm validate` aprovado com 195 testes após a migration 005 e observações de cota.
 - 22 receitas específicas documentadas disponíveis no catálogo inicial; ainda não equivalem a conexões autenticadas.
 - Privacidade de projeto lida e gravada no main; inferência de sessão exige `projectId` correspondente.
 - Execução CLI restrita por política; benchmarks com JavaScript não confiável desativados até existir sandbox sem rede.

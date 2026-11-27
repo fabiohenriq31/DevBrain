@@ -39,6 +39,22 @@ const quota = (id: string, scopeId = 'provider-a', limit = 1) => ({
 });
 
 describe('transactional quota ledger', () => {
+  it('records only numeric provider quota headers against an existing definition', () => {
+    const ledger = new QuotaLedger(db().driver);
+    ledger.define(quota('provider-rate', 'provider-a', 100));
+    ledger.observeResponseHeaders(['provider-rate'], {
+      'x-ratelimit-remaining-requests': '42',
+    });
+    expect(ledger.observations('provider-rate')[0]).toMatchObject({
+      remaining: 42,
+      used: 58,
+      source: 'response-header',
+    });
+    ledger.observeResponseHeaders(['provider-rate'], {
+      'x-ratelimit-remaining-requests': 'unknown',
+    });
+    expect(ledger.observations('provider-rate')).toHaveLength(1);
+  });
   it('admits only one concurrent request against a shared provider limit', async () => {
     const ledger = new QuotaLedger(db().driver);
     ledger.define(quota('shared-quota'));

@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 import {
   DevBrainError,
   QuotaDefinitionSchema,
+  QuotaObservationSchema,
   QuotaReservationSchema,
   UsageRecordSchema,
   type QuotaDefinition,
+  type QuotaObservation,
   type QuotaReservation,
   type UsageRecord,
 } from '@devbrain/contracts';
@@ -41,6 +43,56 @@ export class QuotaLedger {
     return rows
       .map((r) => QuotaDefinitionSchema.parse(JSON.parse(r.data)))
       .filter((d) => !scopeId || d.scopeId === scopeId);
+  }
+
+  observations(quotaId: string): QuotaObservation[] {
+    return this.db
+      .all<{ data: string }>(
+        'SELECT data FROM ai_quota_observations WHERE quota_id=:id ORDER BY observed_at DESC LIMIT 100',
+        { id: quotaId },
+      )
+      .map((row) => QuotaObservationSchema.parse(JSON.parse(row.data)));
+  }
+
+  observe(input: QuotaObservation): void {
+    const value = QuotaObservationSchema.parse(input);
+    if (!this.definitions().some((definition) => definition.id === value.quotaId))
+      throw new DevBrainError('NOT_FOUND', 'Quota definition missing');
+    this.db.run(
+      'INSERT INTO ai_quota_observations (quota_id,data,observed_at) VALUES (:id,:data,:at)',
+      { id: value.quotaId, data: JSON.stringify(value), at: value.observedAt },
+    );
+  }
+
+  /** Only documented quota definitions can be matched to provider rate-limit headers. */
+  observeResponseHeaders(quotaIds: readonly string[], headers: Record<string, string>): void {
+    const now = new Date(this.clock()).toISOString();
+    const definitions = new Map(
+      this.definitions().map((definition) => [definition.id, definition]),
+    );
+    for (const quotaId of quotaIds) {
+      const definition = definitions.get(quotaId);
+      if (!definition || definition.origin === 'devbrain') continue;
+      const key =
+        definition.unit === 'requests'
+          ? 'x-ratelimit-remaining-requests'
+          : definition.unit === 'total-tokens'
+            ? 'x-ratelimit-remaining-tokens'
+            : null;
+      if (!key) continue;
+      const raw = headers[key];
+      if (!raw || !/^\d+$/.test(raw)) continue;
+      const remaining = Number(raw);
+      if (!Number.isSafeInteger(remaining)) continue;
+      this.observe({
+        quotaId,
+        remaining,
+        used: definition.limit === null ? null : Math.max(0, definition.limit - remaining),
+        resetAt: null,
+        observedAt: now,
+        source: 'response-header',
+      });
+    }
   }
 
   private start(def: QuotaDefinition): string {
