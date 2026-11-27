@@ -350,7 +350,13 @@ describe('gateway fallback', () => {
       const result = await gateway.infer(request());
       expect(result.content).toBe('free route');
       expect(result.routeId).toBe('route-b');
-      expect(result.attempts).toHaveLength(1);
+      // Phase 02 intelligence: an exhausted quota excludes the route BEFORE any attempt
+      // (stage 1), and the explanation records why.
+      expect(result.attempts).toHaveLength(0);
+      const decision = gateway.intelligence.decision(result.requestId);
+      expect(decision?.excluded).toEqual([
+        { routeId: 'route-a', reasons: [expect.objectContaining({ code: 'quota-exhausted' })] },
+      ]);
     } finally {
       await upstream.close();
     }

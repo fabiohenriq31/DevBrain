@@ -21,6 +21,7 @@ import type { CoreServices } from '@devbrain/core';
 import type { OperationalExecutionService } from '@devbrain/execution-engine';
 import { LocalGitService } from '@devbrain/git-engine';
 import type { AiGateway, OllamaRuntime, ProviderCatalog } from '@devbrain/ai-gateway';
+import { ContextHandoffService, ContextOptimizer, SUITES } from '@devbrain/intelligence';
 import { redactString } from '@devbrain/security';
 import { isTrustedRendererUrl } from './security.js';
 
@@ -337,6 +338,98 @@ export const createHandlers = ({
     'ai.quota.reservations': (input) => g().ledger.reservations(input.quotaId),
     'ai.usage.list': (input) => g().ledger.usage(input.requestId),
     'ai.credits.get': () => null,
+    // ---- Phase 02 intelligence: every decision is made here, in the main process --------
+    'ai.routes.select': (input) => {
+      const decision = g().explain(input);
+      const top = decision.ranked[0];
+      if (!top)
+        throw new DevBrainError('PROVIDER_UNAVAILABLE', 'No eligible model route', {
+          details: { excluded: decision.excluded.length },
+        });
+      return {
+        requestId: decision.requestId,
+        routeId: top.routeId,
+        policyId: decision.policyId,
+        selectedAt: decision.decidedAt,
+        reason: `score ${top.score} (${top.evidence}); ${top.notes[0] ?? 'eligible'}`.slice(0, 500),
+        candidateRouteIds: decision.ranked.map((r) => r.routeId),
+      };
+    },
+    'ai.routes.explain': (input) => g().explain(input),
+    'ai.projectPolicy.get': (input) => g().intelligence.projectPolicyOrDefault(input.projectId),
+    'ai.projectPolicy.save': (input) => {
+      if (!c().db.projects.findById(input.projectId))
+        throw new DevBrainError('NOT_FOUND', 'Project not found');
+      const saved = g().intelligence.saveProjectPolicy(input);
+      c().db.audit.appendSync({
+        actor: { type: 'user' },
+        action: 'ai.project-policy.saved',
+        permission: null,
+        projectId: saved.projectId,
+        target: saved.projectId,
+        outcome: 'success',
+        details: {
+          privacyClass: saved.privacyClass,
+          approvedProviders: saved.approvedProviderIds.length,
+          allowPaid: saved.budget.allowPaid,
+          allowUnboundedCost: saved.budget.allowUnboundedCost,
+        },
+        correlationId: null,
+      });
+      return saved;
+    },
+    'ai.privacyProfiles.list': () => g().intelligence.privacyProfiles(),
+    'ai.privacyProfiles.save': (input) => {
+      const saved = g().intelligence.savePrivacyProfile(input);
+      c().db.audit.appendSync({
+        actor: { type: 'user' },
+        action: 'ai.privacy-profile.saved',
+        permission: null,
+        projectId: null,
+        target: saved.providerId,
+        outcome: 'success',
+        details: { training: saved.trainingOnInputs, retention: saved.retention },
+        correlationId: null,
+      });
+      return saved;
+    },
+    'ai.cost.get': (input) => g().intelligence.cost(input.requestId),
+    'ai.budget.status': (input) => g().budgetStatus(input),
+    'ai.quota.forecast': (input) => g().engine.quota.forecast(input.quotaId),
+    'ai.benchmark.suites': () =>
+      SUITES.map((suite) => ({
+        id: suite.id,
+        version: suite.version,
+        cases: suite.cases.length,
+        categories: [...new Set(suite.cases.map((x) => x.category))],
+      })),
+    'ai.benchmark.run': async (input) => {
+      const run = await g().runBenchmark(input);
+      c().db.audit.appendSync({
+        actor: { type: 'user' },
+        action: 'ai.benchmark.run',
+        permission: null,
+        projectId: input.projectId ?? null,
+        target: input.routeId,
+        outcome: 'success',
+        details: {
+          suite: `${run.suiteId}@${run.suiteVersion}`,
+          passed: run.results.filter((r) => r.passed).length,
+          cases: run.results.length,
+        },
+        correlationId: null,
+      });
+      return run;
+    },
+    'ai.benchmark.evidence': (input) =>
+      g()
+        .models()
+        .filter((m) => !input.modelId || m.id === input.modelId)
+        .map((m) => g().modelEvidence(m.id)),
+    'ai.context.preview': (input) =>
+      new ContextOptimizer().optimize(input.messages, { budgetTokens: input.budgetTokens }).report,
+    'ai.handoff.build': async (input) =>
+      new ContextHandoffService().build(await c().sessions.history(input.sessionId), input.kind),
     'ai.local.list': async () => [await local().inspect()],
     'ai.local.models': (input) => (input.runtimeId === local().id ? local().models() : []),
     'ai.local.pull': (input) => {

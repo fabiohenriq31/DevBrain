@@ -68,8 +68,8 @@ export class BudgetPolicyService {
       limitMicros: number | null,
       periodSeconds: number,
     ) => {
-      const scopeId = scope === 'global' ? 'global' : scopeKey(scope, scopeValue);
-      const quotaId = `budget.${scope === 'global' ? 'global' : scopeId}.${currency}`;
+      const scopeId = scopeKey(scope, scopeValue);
+      const quotaId = `budget.${scopeId}.${currency}`;
       this.ledger.define({
         id: quotaId,
         scope,
@@ -83,9 +83,10 @@ export class BudgetPolicyService {
       });
       out.push({ quotaId, scope, scopeId, limitMicros });
     };
+    // The global/day ceiling belongs to the gateway billing policy (one window per policy).
     add(
       'global',
-      'global',
+      ctx.billing.id,
       ctx.billing.maxCostPerDay === null ? null : toMicros(ctx.billing.maxCostPerDay),
       DAY,
     );
@@ -197,13 +198,17 @@ export class BudgetPolicyService {
   }
 
   /** Measured cost for reconciliation; null when tokens or verified pricing are missing. */
-  measured(model: ModelDefinition, local: boolean, use: Partial<TokenUse>): number | null {
+  measured(
+    model: ModelDefinition,
+    local: boolean,
+    use: { [K in keyof TokenUse]?: TokenUse[K] | null },
+  ): number | null {
     if (local || isVerifiedFree(model.pricing)) return 0;
     if (use.inputTokens == null || use.outputTokens == null) return null;
     return costMicros(model.pricing, {
       inputTokens: use.inputTokens,
       outputTokens: use.outputTokens,
-      ...(use.cachedInputTokens !== undefined ? { cachedInputTokens: use.cachedInputTokens } : {}),
+      ...(use.cachedInputTokens != null ? { cachedInputTokens: use.cachedInputTokens } : {}),
     });
   }
 
