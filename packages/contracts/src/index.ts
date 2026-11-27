@@ -8,6 +8,8 @@ export * from './entities/permissions.js';
 export * from './entities/execution.js';
 export * from './entities/records.js';
 export * from './entities/core.js';
+export * from './entities/task.js';
 export * from './entities/ai-resource.js';
+export * from './entities/intelligence.js';
 export * from './ipc.js';
 export type * from './services.js';

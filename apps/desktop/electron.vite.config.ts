@@ -6,6 +6,8 @@ import type { Plugin } from 'vite';
 /** Workspace packages are bundled into main/preload; third-party deps stay external in main. */
 const WORKSPACE = [
   '@devbrain/contracts',
+  '@devbrain/ai-gateway',
+  '@devbrain/intelligence',
   '@devbrain/security',
   '@devbrain/database',
   '@devbrain/project-engine',

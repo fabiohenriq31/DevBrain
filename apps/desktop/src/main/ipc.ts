@@ -12,6 +12,7 @@ import {
   IPC_CHANNELS,
   dispatchIpc,
   ipcChannelName,
+  ipcEventName,
   nowTimestamp,
   type IpcChannelKey,
   type IpcHandlerMap,
@@ -19,12 +20,17 @@ import {
 import type { CoreServices } from '@devbrain/core';
 import type { OperationalExecutionService } from '@devbrain/execution-engine';
 import { LocalGitService } from '@devbrain/git-engine';
+import type { AiGateway, OllamaRuntime, ProviderCatalog } from '@devbrain/ai-gateway';
+import { ContextHandoffService, ContextOptimizer, SUITES } from '@devbrain/intelligence';
 import { redactString } from '@devbrain/security';
 import { isTrustedRendererUrl } from './security.js';
 
 export interface MainServices {
   core: CoreServices | null;
   engine?: OperationalExecutionService | null;
+  gateway?: AiGateway | null;
+  catalog?: ProviderCatalog | null;
+  localRuntime?: OllamaRuntime;
   git?: LocalGitService;
   devServerUrl: string | undefined;
 }
@@ -66,6 +72,9 @@ const applyWindowTheme = (theme: 'system' | 'light' | 'dark'): void => {
 export const createHandlers = ({
   core,
   engine,
+  gateway,
+  catalog,
+  localRuntime,
   git = new LocalGitService(),
 }: MainServices): IpcHandlerMap => {
   const c = (): CoreServices => {
@@ -79,6 +88,24 @@ export const createHandlers = ({
   const e = (): OperationalExecutionService => {
     if (!engine) throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Execution engine unavailable');
     return engine;
+  };
+  const g = (): AiGateway => {
+    if (!gateway) throw new DevBrainError('PROVIDER_UNAVAILABLE', 'AI gateway unavailable');
+    return gateway;
+  };
+  const p = (): ProviderCatalog => {
+    if (!catalog) throw new DevBrainError('PROVIDER_UNAVAILABLE', 'AI catalog unavailable');
+    return catalog;
+  };
+  const local = (): OllamaRuntime => {
+    if (!localRuntime) throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Local runtime unavailable');
+    return localRuntime;
+  };
+  const pulls = new Map<string, AbortController>();
+  const emitAi = (key: 'ai.inference.event' | 'ai.local.pullProgress', payload: unknown): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(ipcEventName(key), payload);
+    }
   };
 
   return {
@@ -256,6 +283,183 @@ export const createHandlers = ({
       const diff = redacted.subarray(0, cut).toString('utf8');
       const truncated = read.truncated || cut < redacted.byteLength;
       return { workspaceId: workspace.id, diff, truncated, capturedAt: nowTimestamp() };
+    },
+    'ai.catalog.list': () => p().list(),
+    'ai.catalog.import': (input) => p().import(Buffer.from(input.data, 'utf8'), input.sourceId),
+    'ai.endpoints.list': () => g().endpoints(),
+    'ai.endpoints.save': (input) => {
+      g().saveEndpoint(input);
+      return input;
+    },
+    'ai.connections.list': () => g().connections(),
+    'ai.connections.save': (input) => {
+      const connection = { ...input, status: 'unknown' as const, lastVerifiedAt: null };
+      g().saveConnection(connection);
+      return connection;
+    },
+    'ai.connections.validate': (input) => g().validateConnection(input.id),
+    'ai.connections.remove': (input) => {
+      g().removeConnection(input.id);
+      return { removed: true as const };
+    },
+    'ai.models.list': (input) =>
+      g()
+        .models()
+        .filter(
+          (model) =>
+            !input.connectionId ||
+            g()
+              .routes()
+              .some(
+                (route) => route.modelId === model.id && route.connectionId === input.connectionId,
+              ),
+        ),
+    'ai.models.save': (input) => {
+      g().saveModel(input);
+      return input;
+    },
+    'ai.routes.list': () => g().routes(),
+    'ai.routes.save': (input) => {
+      g().saveRoute(input);
+      return input;
+    },
+    'ai.policies.configure': (input) => {
+      g().configurePolicy(input);
+      return input.policy;
+    },
+    'ai.inference.submit': (input) => ({
+      requestId: g().submit(input, (event) => emitAi('ai.inference.event', event)),
+    }),
+    'ai.inference.result': (input) => g().result(input.requestId),
+    'ai.inference.cancel': (input) => ({ cancelled: g().cancel(input.requestId) }),
+    'ai.inference.attempts': (input) => g().attempts(input.requestId),
+    'ai.quota.definitions': (input) => g().ledger.definitions(input.scopeId),
+    'ai.quota.observations': () => [],
+    'ai.quota.reservations': (input) => g().ledger.reservations(input.quotaId),
+    'ai.usage.list': (input) => g().ledger.usage(input.requestId),
+    'ai.credits.get': () => null,
+    // ---- Phase 02 intelligence: every decision is made here, in the main process --------
+    'ai.routes.select': (input) => {
+      const decision = g().explain(input);
+      const top = decision.ranked[0];
+      if (!top)
+        throw new DevBrainError('PROVIDER_UNAVAILABLE', 'No eligible model route', {
+          details: { excluded: decision.excluded.length },
+        });
+      return {
+        requestId: decision.requestId,
+        routeId: top.routeId,
+        policyId: decision.policyId,
+        selectedAt: decision.decidedAt,
+        reason: `score ${top.score} (${top.evidence}); ${top.notes[0] ?? 'eligible'}`.slice(0, 500),
+        candidateRouteIds: decision.ranked.map((r) => r.routeId),
+      };
+    },
+    'ai.routes.explain': (input) => g().explain(input),
+    'ai.projectPolicy.get': (input) => g().intelligence.projectPolicyOrDefault(input.projectId),
+    'ai.projectPolicy.save': (input) => {
+      if (!c().db.projects.findById(input.projectId))
+        throw new DevBrainError('NOT_FOUND', 'Project not found');
+      const saved = g().intelligence.saveProjectPolicy(input);
+      c().db.audit.appendSync({
+        actor: { type: 'user' },
+        action: 'ai.project-policy.saved',
+        permission: null,
+        projectId: saved.projectId,
+        target: saved.projectId,
+        outcome: 'success',
+        details: {
+          privacyClass: saved.privacyClass,
+          approvedProviders: saved.approvedProviderIds.length,
+          allowPaid: saved.budget.allowPaid,
+          allowUnboundedCost: saved.budget.allowUnboundedCost,
+        },
+        correlationId: null,
+      });
+      return saved;
+    },
+    'ai.privacyProfiles.list': () => g().intelligence.privacyProfiles(),
+    'ai.privacyProfiles.save': (input) => {
+      const saved = g().intelligence.savePrivacyProfile(input);
+      c().db.audit.appendSync({
+        actor: { type: 'user' },
+        action: 'ai.privacy-profile.saved',
+        permission: null,
+        projectId: null,
+        target: saved.providerId,
+        outcome: 'success',
+        details: { training: saved.trainingOnInputs, retention: saved.retention },
+        correlationId: null,
+      });
+      return saved;
+    },
+    'ai.cost.get': (input) => g().intelligence.cost(input.requestId),
+    'ai.budget.status': (input) => g().budgetStatus(input),
+    'ai.quota.forecast': (input) => g().engine.quota.forecast(input.quotaId),
+    'ai.benchmark.suites': () =>
+      SUITES.map((suite) => ({
+        id: suite.id,
+        version: suite.version,
+        cases: suite.cases.length,
+        categories: [...new Set(suite.cases.map((x) => x.category))],
+      })),
+    'ai.benchmark.run': async (input) => {
+      const run = await g().runBenchmark(input);
+      c().db.audit.appendSync({
+        actor: { type: 'user' },
+        action: 'ai.benchmark.run',
+        permission: null,
+        projectId: input.projectId ?? null,
+        target: input.routeId,
+        outcome: 'success',
+        details: {
+          suite: `${run.suiteId}@${run.suiteVersion}`,
+          passed: run.results.filter((r) => r.passed).length,
+          cases: run.results.length,
+        },
+        correlationId: null,
+      });
+      return run;
+    },
+    'ai.benchmark.quality': (input) =>
+      g()
+        .models()
+        .filter((m) => !input.modelId || m.id === input.modelId)
+        .map((m) => g().modelEvidence(m.id)),
+    'ai.context.preview': (input) =>
+      new ContextOptimizer().optimize(input.messages, { budgetTokens: input.budgetTokens }).report,
+    'ai.handoff.build': async (input) =>
+      new ContextHandoffService().build(await c().sessions.history(input.sessionId), input.kind),
+    'ai.local.list': async () => [await local().inspect()],
+    'ai.local.models': (input) => (input.runtimeId === local().id ? local().models() : []),
+    'ai.local.pull': (input) => {
+      if (input.runtimeId !== local().id)
+        throw new DevBrainError('NOT_FOUND', 'Local runtime missing');
+      const operationId = `pull_${crypto.randomUUID()}`;
+      const controller = new AbortController();
+      pulls.set(operationId, controller);
+      void (async () => {
+        try {
+          for await (const progress of local().pull(input.modelId, controller.signal))
+            emitAi('ai.local.pullProgress', { operationId, ...progress });
+        } finally {
+          pulls.delete(operationId);
+        }
+      })().catch(() => {
+        pulls.delete(operationId);
+      });
+      return { operationId };
+    },
+    'ai.local.cancelPull': (input) => {
+      const controller = pulls.get(input.operationId);
+      controller?.abort();
+      return { cancelled: Boolean(controller) };
+    },
+    'ai.local.remove': async (input) => {
+      if (input.runtimeId !== local().id)
+        throw new DevBrainError('NOT_FOUND', 'Local runtime missing');
+      await local().remove(input.modelId);
+      return { removed: true };
     },
   };
 };

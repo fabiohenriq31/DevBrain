@@ -13,6 +13,7 @@ export default defineConfig({
       '@devbrain/project-engine': pkg('project-engine'),
       '@devbrain/core': pkg('core'),
       '@devbrain/provider-sdk': pkg('provider-sdk'),
+      '@devbrain/intelligence': pkg('intelligence'),
       '@devbrain/execution-engine': pkg('execution-engine'),
       '@devbrain/git-engine': pkg('git-engine'),
       '@devbrain/ui': pkg('ui'),

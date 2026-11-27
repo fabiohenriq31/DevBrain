@@ -134,3 +134,32 @@ Base: `origin/phase-02/contracts` (`4ada206`, descendente da consolidação da F
 | Estratégias de roteamento (6 modos) e Classificação de Privacidade por Projeto (*Público*, *Pessoal privado*, *Comercial confidencial*, *Restrito*) com guardrails não contornáveis e bloqueio no Workspace para projetos *Restrito* | ✅ | `views/ai-center/RoutingBenchmarksDiagnosticsSection.tsx`, `views/ProjectsView.tsx`, `views/WorkspaceView.tsx`, `ai-center.test.ts` |
 | Laboratório de Benchmarks e Diagnóstico/Matriz IPC (zero notas fictícias, sem execução automática em APIs pagas, console controlado de streaming `ai.inference.*` e importação auditada `ai.catalog.import`) | ✅ | `views/ai-center/RoutingBenchmarksDiagnosticsSection.tsx`, `ai-center.test.ts` |
 | Ligação em tempo de execução dos handlers `ai.*` no processo `main` (`apps/desktop/src/main/ipc.ts`) | 🟡 | Em `phase-02/contracts` puro, `dispatchIpc` responde honestamente `UNSUPPORTED` (exibido na Matriz IPC de Diagnóstico); ativa automaticamente na consolidação com `phase-02/codex-ai-gateway` e o bloco Core/Catálogo de Claude |
+
+### Codex: `phase-02/codex-ai-gateway` (2026-11-27)
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Contratos 0.5.0 da Fase 02 | ✅ | `phase-02/contracts`, PR #5, validação completa da base inicial |
+| Transportes e gateway interno | 🟡 | Seis protocolos; testes de HTTP 200 com erro, stream, cancelamento, fallback, validação de modelo sem inferência e recuperação de política; sem inferência externa autenticada |
+| Ledger SQLite e recuperação | 🟡 | Migration 003 e testes de concorrência, janela, consumo incerto; escopos avançados e créditos ainda pendentes |
+| Catálogo de descoberta | 🟡 | 327 candidatos Models.dev com proveniência; nenhuma conexão habilitada automaticamente; validação individual pendente |
+| OpenCode | 🟡 | Adaptador CLI no motor da Fase 01 e servidor loopback autenticado opcional; CLI ausente no ambiente; integração de ciclo de vida entre ambos pendente |
+| Runtime local | 🟡 | Ollama: inspeção, modelos, download e remoção; teste com servidor local controlado; runtime real ausente |
+| Interface e políticas avançadas | ⏸️ | Consumidores Claude e Antigravity, sem alegação de implementação nesta branch |
+
+### Claude: `phase-02/claude-intelligence` (2026-11-27)
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Contratos 0.7.0 (aditivos) | ✅ | `entities/task.ts`, `entities/intelligence.ts`, 13 canais; `compat.test.ts` |
+| Roteamento em 2 estágios, presets, explicação | ✅ | `intelligence.test.ts` (ai-gateway): pontuação não readmite rota excluída, sem modelos externos, qualidade mínima |
+| Orçamento em micros com reserva atômica | ✅ | Testes de concorrência, teto estrito, custo desconhecido, pago não autorizado, gratuito → pago bloqueado |
+| Cotas: prioridade, ritmo, previsão, cooldown por provedor | ✅ | Testes unitários + 429 em uma chave esfria o provedor |
+| Privacidade por projeto no main | ✅ | Projeto restrito usa só local; padrão `personal-private`; fallback mantém a classe |
+| Aplicação no gateway antes de cada tentativa | ✅ | Reavaliação por tentativa; decisão persistida (`ai_routing_decisions`) |
+| Otimizador de contexto | ✅ | `scripts/measure-context.mjs` (fixtures sintéticas, ver PHASE_02) |
+| Handoff estruturado | ✅ | Efeito não confirmado → `reconciliationRequired` |
+| Benchmark | 🟡 | Suíte e avaliadores testados; sem resultado de modelo (sem runtime local, sem API paga) |
+| Endurecimento do gateway | ✅ | `Host`/`Origin` no loopback, IPv6 6to4/Teredo |
+| UI consumindo as decisões do main | ⏸️ | Antigravity (ver INTEGRATION) |
+| `pnpm validate` | ✅ | 180 testes, build desktop, smoke `ok:v4` |

@@ -311,7 +311,99 @@ consentir de forma informada. Nenhum orçamento é apresentado como garantido se
 - `ProviderAdapter.execute` dos adaptadores CLI continua `UNSUPPORTED` e está documentado:
   o único caminho de execução é `OperationalExecutionService`.
 
-## ADR-0022: arquitetura da Central de IA, guardrails não contornáveis de roteamento/privacidade e contabilidade honesta de cotas
+## ADR-0022 — Gateway interno e admissões conservadoras (Fase 02)
+
+**Contexto.** A fundação da Fase 01 tem Core, cofre e SQLite locais. Provedores
+externos apresentam cotas incompletas, respostas heterogêneas e falhas parciais.
+
+**Decisão.** O gateway é um pacote TypeScript invocado internamente pelo main do
+Electron. Uma conexão de API é distinta de um agente CLI. O transporte usa HTTPS
+para destinos remotos, DNS fixado para a requisição, bloqueio de endereços privados
+e redirecionamentos. Endpoints de loopback exigem indicação explícita. Credenciais
+são resolvidas pelo cofre existente e nunca entram no renderer. Catálogos importados
+não ativam conexões. O ledger faz admissão transacional no SQLite; consumo sem
+medição depois de envio é marcado incerto e conserva a reserva. A seleção
+determinística ocupa um único ponto substituível pelas políticas do Claude. Em modo
+gratuito, rotas pagas ou de custo desconhecido são excluídas. Após saída parcial,
+não há fallback silencioso.
+
+**Limites.** A reserva por tokens não é garantia de custo financeiro. Não se promete
+cota gratuita, preço zero, compatibilidade de modelo ou autenticação por descoberta
+de catálogo. O servidor HTTP local autenticado é opcional e não inicia por padrão;
+seu vínculo com OpenCode, validações externas e políticas avançadas ainda exigem
+implementação e evidência próprias.
+
+## ADR-0023 — Roteamento em dois estágios, explicável e sem IA (Fase 02)
+
+**Contexto.** A Fase 02 precisa escolher modelos considerando autorização, privacidade,
+custo e cotas, sem depender de um modelo avançado para decidir e funcionando sem nenhum
+modelo externo.
+
+**Decisão.** `@devbrain/intelligence` (pacote puro) implementa o `RoutingPolicyEngine`.
+Estágio 1 elimina rotas por restrições rígidas (autorização, disponibilidade, cooldown,
+segurança do endpoint, protocolo, capacidade, contexto, privacidade, preset, qualidade
+mínima declarada, orçamento, cota) e registra todos os motivos. Estágio 2 ordena as
+sobreviventes por pontuação determinística (especialidade, qualidade, confiabilidade,
+latência, custo, cota restante, continuidade, exploração). A pontuação nunca readmite
+uma rota excluída. Sem `preset`, a estratégia legada e a prioridade da rota continuam
+mandando (compatibilidade com o gateway do Codex). O gateway substitui o
+`DeterministicRouter` pelo motor e **reavalia cada tentativa** (inclusive fallbacks) com
+o estado atual. A decisão é persistida em `ai_routing_decisions` (migração 004).
+
+**Limites.** A classificação por palavras-chave nunca exclui rotas: só um `task`
+declarado define piso de qualidade. Sem evidência medida, o nível vem de metadados e
+nunca chega a `frontier`. Thompson Sampling não está ativo: a exploração é um bônus fixo
+e pequeno, só entre rotas gratuitas/locais já elegíveis.
+
+## ADR-0024 — Orçamento no mesmo ledger, em micros, com admissão atômica
+
+**Decisão.** Tetos do DevBrain (global por política de cobrança/dia, projeto/dia,
+sessão, por inferência) são cotas `currency` com `origin: 'devbrain'` no `QuotaLedger`
+do Codex (não há segundo armazenamento de cotas). O pior caso (todos os tokens de
+entrada ao preço da faixa, sem desconto de cache, saída máxima) é reservado na **mesma
+transação** das cotas do provedor, o que impede que requisições concorrentes ultrapassem
+o teto juntas. Após a resposta, reconcilia com o custo medido; sem medição, a reserva
+permanece comprometida (`uncertain`) e o custo fica `unknown`. Rota paga exige
+`billing.allowPaid` **e**, havendo projeto, `budget.allowPaid`. Política estrita: com
+qualquer teto ativo, rota de custo não limitável é bloqueada.
+
+**Limites.** O DevBrain para de despachar; não limita a fatura do provedor. Preço sem
+verificação é desconhecido, nunca zero. O custo reportado pelo provedor (`reported`)
+ainda não é lido pelos adaptadores.
+
+## ADR-0025 — Privacidade por projeto decidida no main
+
+**Decisão.** A classe do projeto (`public`, `personal-private`, `commercial-confidential`,
+`restricted`) e os fatos verificados de cada provedor vivem no SQLite do main
+(`ai_project_policies`, `ai_privacy_profiles`). O gateway lê a política pelo
+`projectId` da requisição, nunca do renderer. Projeto nunca configurado vale
+`personal-private`. Fatos desconhecidos são tratados de forma conservadora; um perfil só
+conta se foi salvo pelo usuário (`verifiedBy: 'user'`). Uma rota só é local se for
+declarada local **e** apontar para loopback. O fallback é avaliado com a mesma classe,
+então não muda a privacidade silenciosamente. O servidor loopback pode ser vinculado a
+um projeto/sessão para que clientes externos (OpenCode) herdem a política.
+
+**Consequência para a UI.** `prefs.projectPrivacy` em `localStorage` e
+`evaluateProviderEligibility` no renderer (branch do Antigravity) passam a ser apenas
+apresentação: a decisão é `ai.projectPolicy.*` + `ai.routes.explain`.
+
+## ADR-0026 — Contexto, handoff e benchmark mensuráveis
+
+**Decisão.** O `ContextOptimizer` v1 é determinístico: deduplicação, compactação de log,
+referência local para conteúdo grande (cache em memória, com escopo projeto+usuário),
+omissão por relevância com manifesto explícito (trechos extrativos, rotulados como "não
+é resumo de modelo"). Instruções de sistema/desenvolvedor e a última instrução do
+usuário nunca são alteradas; saída de ferramenta é envolvida como dado não confiável.
+O `ContextHandoffService` monta um pacote a partir do checkpoint v1 da Fase 01 e lista
+em `reconciliationRequired` todo efeito colateral não confirmado; nunca promete retomar
+processo morto. O `BenchmarkEngine` roda suítes versionadas pelo próprio gateway (as
+políticas se aplicam), com avaliadores objetivos; código gerado é avaliado em processo
+Node separado com `--permission`, ambiente vazio e timeout.
+
+**Limites.** A memória de longo prazo e a recuperação semântica são da Fase 03 (apenas
+as interfaces existem). O modelo de permissões do Node não bloqueia rede.
+
+## ADR-0027: arquitetura da Central de IA, guardrails não contornáveis de roteamento/privacidade e contabilidade honesta de cotas
 
 **Status:** aceita (Fase 02)
 
