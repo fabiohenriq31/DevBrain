@@ -21,7 +21,7 @@ import {
 describe('contracts 0.2.0 backward compatibility', () => {
   it('is a MINOR bump of 0.1.0', () => {
     // 0.3.0 adds Git; 0.4.0 adds budget fields; 0.5.0 adds AI resources. All additive.
-    expect(CONTRACTS_VERSION).toBe('0.7.0');
+    expect(CONTRACTS_VERSION).toBe('0.7.1');
   });
 
   it('reads 0.1.0 projects, sessions, approvals and settings with defaults', () => {

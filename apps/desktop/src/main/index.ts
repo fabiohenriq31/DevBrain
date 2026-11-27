@@ -2,7 +2,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, Menu, app } from 'electron';
 import { DevBrainError, ipcEventName } from '@devbrain/contracts';
-import { AiGateway, OllamaRuntime, ProviderCatalog } from '@devbrain/ai-gateway';
+import {
+  AiGateway,
+  OllamaRuntime,
+  OpenAiLocalRuntime,
+  ProviderCatalog,
+} from '@devbrain/ai-gateway';
 import { OperationalExecutionService } from '@devbrain/execution-engine';
 import { startCore, type StartedCore } from './core.js';
 import { registerIpc } from './ipc.js';
@@ -95,7 +100,18 @@ void app.whenReady().then(() => {
       })
     : null;
   const catalog = core ? new ProviderCatalog(core.db.driver) : null;
-  registerIpc({ core, engine, gateway, catalog, localRuntime: new OllamaRuntime(), devServerUrl });
+  registerIpc({
+    core,
+    engine,
+    gateway,
+    catalog,
+    localRuntime: new OllamaRuntime(),
+    localRuntimes: [
+      new OpenAiLocalRuntime('custom', 'http://127.0.0.1:1234/v1'),
+      new OpenAiLocalRuntime('llama-cpp', 'http://127.0.0.1:9931/v1'),
+    ],
+    devServerUrl,
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

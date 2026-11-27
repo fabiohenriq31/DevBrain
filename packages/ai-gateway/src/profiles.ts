@@ -146,7 +146,7 @@ const recipes = [
   [
     'llama-cpp',
     'llama.cpp server',
-    'http://127.0.0.1:8080/v1',
+    'http://127.0.0.1:9931/v1',
     'openai-chat',
     'https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md',
   ],

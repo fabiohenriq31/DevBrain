@@ -1,7 +1,10 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.6.0**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.7.1**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
+
+0.7.1 amplia `LocalModel.modelId` para identificadores upstream com `/`, comuns em
+LM Studio e llama.cpp. Os canais IPC da versão 0.7.0 permanecem compatíveis.
 
 Os contratos são a única interface entre os módulos dos três agentes. São escritos em
 zod, o que dá tipos estáticos (`z.infer`) e validação em runtime nas fronteiras de

@@ -29,6 +29,9 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
 - Benchmarks que executariam JavaScript gerado pelo modelo foram desativados:
   o permission model de Node não isola rede. A suíte exposta contém apenas
   avaliações estáticas/estruturadas.
+- Descoberta local por `GET /v1/models` para LM Studio e llama.cpp server,
+  além da API nativa do Ollama. Identificadores upstream com `/` são aceitos
+  pelos contratos 0.7.1. A porta padrão documentada do llama.cpp é 9931.
 
 ## Perfis específicos documentados
 
@@ -64,7 +67,7 @@ desconhecidos até verificação explícita por conta e modelo.
 
 ## Validação e aceite
 
-`pnpm validate`: TypeScript, lint, Prettier, 195 testes, varredura de segredos,
+`pnpm validate`: TypeScript, lint, Prettier, 196 testes, varredura de segredos,
 build e smoke Electron aprovados na consolidação. O smoke cobre a regressão
 da Fase 01, armazenamento cifrado, sessões, recuperação, execução e UI.
 
@@ -79,8 +82,8 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.746.638 bytes; SHA-256
-`42A143D36255B4DC0FDF6B8D13F28558406F124086D4C0745101D0884DB2C8BC`).
+(120.747.322 bytes; SHA-256
+`82DD0700A78D1C15A833068F464E0859FFA2BCEA0ED4F08F80404A3BF9934F00`).
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.
@@ -102,7 +105,8 @@ tocados.
    renovação e custos reportados; observações só surgem quando há definição
    explícita e cabeçalho reconhecido.
 3. Integrar os demais canais IPC 0.7.0 à UI, contexto e handoff ao fluxo real,
-   descoberta de modelos e os runtimes locais adicionais.
+   configuração de endpoints locais personalizados e downloads em runtimes que
+   ofereçam API oficial para isso.
 4. Validar dois provedores independentes e fallback real com contas autorizadas.
 5. Finalizar testes de instalação e atualização em perfis descartáveis.
 

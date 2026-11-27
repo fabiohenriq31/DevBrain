@@ -131,6 +131,74 @@ export class OllamaRuntime {
   }
 }
 
+/** Read-only discovery for LM Studio, llama.cpp and other explicitly local OAI endpoints. */
+export class OpenAiLocalRuntime {
+  readonly id: string;
+  constructor(
+    readonly kind: 'llama-cpp' | 'custom',
+    readonly baseUrl: string,
+    private readonly transport = new SafeHttpTransport(),
+  ) {
+    const url = new URL(baseUrl);
+    if (
+      url.protocol !== 'http:' ||
+      !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      throw new DevBrainError('PERMISSION_DENIED', 'Local runtime must use loopback HTTP');
+    this.id = kind === 'llama-cpp' ? 'loc_llama_cpp' : 'loc_lm_studio';
+  }
+
+  private async list(): Promise<unknown[]> {
+    const response = await this.transport.json({
+      url: `${this.baseUrl.replace(/\/+$/, '')}/models`,
+      method: 'GET',
+      allowLoopback: true,
+      timeoutMs: 3000,
+    });
+    if (response.status !== 200 || !Array.isArray(obj(response.data).data))
+      throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Local model list unavailable');
+    return obj(response.data).data as unknown[];
+  }
+
+  async inspect(): Promise<LocalRuntime> {
+    let available = false;
+    try {
+      await this.list();
+      available = true;
+    } catch {
+      /* runtime absent */
+    }
+    return LocalRuntimeSchema.parse({
+      id: this.id,
+      kind: this.kind,
+      endpoint: this.baseUrl,
+      status: available ? 'available' : 'unavailable',
+      version: null,
+    });
+  }
+
+  async models(): Promise<LocalModel[]> {
+    const models = await this.list();
+    return models.map((raw, index) => {
+      const source = obj(raw);
+      if (typeof source.id !== 'string' || !source.id || source.id.length > 300)
+        throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Invalid local model identifier');
+      return LocalModelSchema.parse({
+        id: `mdl_${this.id}_${index}`,
+        runtimeId: this.id,
+        modelId: source.id,
+        sizeBytes: null,
+        digest: null,
+        installedAt: null,
+      });
+    });
+  }
+}
+
 export const inspectHardware = (): HardwareProfile =>
   HardwareProfileSchema.parse({
     platform: process.platform,

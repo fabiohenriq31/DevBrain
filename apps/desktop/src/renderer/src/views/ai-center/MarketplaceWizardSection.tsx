@@ -80,7 +80,7 @@ const DEFAULT_ENDPOINTS_BY_PROVIDER: Readonly<
   },
   ollama: { baseUrl: 'http://127.0.0.1:11434', protocol: 'ollama' },
   lmstudio: { baseUrl: 'http://127.0.0.1:1234/v1', protocol: 'openai-chat' },
-  'llama-cpp': { baseUrl: 'http://127.0.0.1:8080/v1', protocol: 'openai-chat' },
+  'llama-cpp': { baseUrl: 'http://127.0.0.1:9931/v1', protocol: 'openai-chat' },
 };
 
 export const MarketplaceWizardSection = ({

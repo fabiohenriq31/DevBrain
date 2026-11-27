@@ -14,7 +14,7 @@ import { SafeHttpTransport } from './transport.js';
 import { ProtocolTransport } from './protocols.js';
 import { ProviderCatalog } from './catalog.js';
 import { SPECIFIC_CONNECTION_PROFILES, connectionRecipe } from './profiles.js';
-import { OllamaRuntime } from './local.js';
+import { OllamaRuntime, OpenAiLocalRuntime } from './local.js';
 import { LocalGatewayServer } from './server.js';
 
 const databases: DevBrainDatabase[] = [];
@@ -417,6 +417,19 @@ describe('catalog', () => {
 });
 
 describe('local runtime', () => {
+  it('discovers OpenAI-compatible local models with upstream IDs containing slashes', async () => {
+    const upstream = await startServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ id: 'publisher/coder:Q4_K_M' }] }));
+    });
+    try {
+      const runtime = new OpenAiLocalRuntime('custom', `${upstream.url}/v1`);
+      expect((await runtime.inspect()).status).toBe('available');
+      expect((await runtime.models())[0]?.modelId).toBe('publisher/coder:Q4_K_M');
+    } finally {
+      await upstream.close();
+    }
+  });
   it('discovers installed Ollama models on an explicitly local endpoint', async () => {
     const upstream = await startServer((req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });

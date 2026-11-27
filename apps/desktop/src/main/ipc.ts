@@ -20,7 +20,12 @@ import {
 import type { CoreServices } from '@devbrain/core';
 import type { OperationalExecutionService } from '@devbrain/execution-engine';
 import { LocalGitService } from '@devbrain/git-engine';
-import type { AiGateway, OllamaRuntime, ProviderCatalog } from '@devbrain/ai-gateway';
+import type {
+  AiGateway,
+  OllamaRuntime,
+  OpenAiLocalRuntime,
+  ProviderCatalog,
+} from '@devbrain/ai-gateway';
 import { ContextHandoffService, ContextOptimizer, SUITES } from '@devbrain/intelligence';
 import { redactString } from '@devbrain/security';
 import { isTrustedRendererUrl } from './security.js';
@@ -31,6 +36,7 @@ export interface MainServices {
   gateway?: AiGateway | null;
   catalog?: ProviderCatalog | null;
   localRuntime?: OllamaRuntime;
+  localRuntimes?: OpenAiLocalRuntime[];
   git?: LocalGitService;
   devServerUrl: string | undefined;
 }
@@ -75,6 +81,7 @@ export const createHandlers = ({
   gateway,
   catalog,
   localRuntime,
+  localRuntimes = [],
   git = new LocalGitService(),
 }: MainServices): IpcHandlerMap => {
   const c = (): CoreServices => {
@@ -444,8 +451,14 @@ export const createHandlers = ({
       new ContextOptimizer().optimize(input.messages, { budgetTokens: input.budgetTokens }).report,
     'ai.handoff.build': async (input) =>
       new ContextHandoffService().build(await c().sessions.history(input.sessionId), input.kind),
-    'ai.local.list': async () => [await local().inspect()],
-    'ai.local.models': (input) => (input.runtimeId === local().id ? local().models() : []),
+    'ai.local.list': async () =>
+      Promise.all([local().inspect(), ...localRuntimes.map((runtime) => runtime.inspect())]),
+    'ai.local.models': (input) => {
+      if (input.runtimeId === local().id) return local().models();
+      const runtime = localRuntimes.find((item) => item.id === input.runtimeId);
+      if (!runtime) throw new DevBrainError('NOT_FOUND', 'Local runtime missing');
+      return runtime.models();
+    },
     'ai.local.pull': (input) => {
       if (input.runtimeId !== local().id)
         throw new DevBrainError('NOT_FOUND', 'Local runtime missing');

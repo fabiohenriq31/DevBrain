@@ -377,7 +377,7 @@ export type LocalRuntime = z.infer<typeof LocalRuntimeSchema>;
 export const LocalModelSchema = z.object({
   id: Id,
   runtimeId: Id,
-  modelId: Id,
+  modelId: z.string().min(1).max(300),
   sizeBytes: z.number().int().nonnegative().nullable(),
   digest: z.string().nullable(),
   installedAt: TimestampSchema.nullable(),
