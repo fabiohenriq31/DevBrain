@@ -175,6 +175,36 @@ const checks = JSON.parse(
   ),
 );
 
+// Exercise the real IPC -> Core authorization -> child process -> persisted event path.
+const executionCheck = await evaluate(
+  `(async () => {
+    const submitted = await window.devbrain.invoke('executions.submit', {
+      sessionId: __SID__,
+      payload: { kind: 'command', executable: 'node', args: ['-e', 'process.stdout.write("smoke-exec")'] }
+    });
+    if (!submitted.ok) return { executionError: submitted.error.code };
+    let result = null;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      const pending = await window.devbrain.invoke('approvals.listPending', {});
+      if (pending.ok) for (const approval of pending.data) {
+        await window.devbrain.invoke('approvals.decide', {
+          approvalId: approval.id, decision: 'approved', scope: 'session'
+        });
+      }
+      const response = await window.devbrain.invoke('executions.getResult', { executionId: submitted.data.executionId });
+      if (response.ok && response.data) { result = response.data; break; }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const history = await window.devbrain.invoke('executions.listEvents', { executionId: submitted.data.executionId });
+    return {
+      executionStatus: result?.status ?? 'missing',
+      executionStreamed: history.ok && history.data.some((event) => event.type === 'output' && event.chunk.includes('smoke-exec')),
+      executionOrdered: history.ok && history.data.every((event, index) => event.seq === index)
+    };
+  })()`.replace('__SID__', JSON.stringify(checks.sessionId)),
+);
+Object.assign(checks, executionCheck);
+
 // ---- simulated crash (kill without clean shutdown) + restart ----
 first.ws.close();
 child.kill('SIGKILL');
@@ -234,6 +264,9 @@ const expected = {
   envDenied: true,
   insideAllowed: true,
   approvalsOk: true,
+  executionStatus: 'completed',
+  executionStreamed: true,
+  executionOrdered: true,
   noPlaintextSecretInDb: true,
   uncleanDetected: true,
   recoveredSessions: 1,
