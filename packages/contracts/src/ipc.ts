@@ -433,6 +433,11 @@ export const IPC_CHANNELS = {
     R.ModelAvailabilitySchema,
     'Validate a configured connection.',
   ),
+  'ai.connections.discover': channel(
+    z.object({ id: R.AiResourceIdSchema }),
+    R.ConnectionDiscoverySchema,
+    'Authenticate a configured connection and list models without inference or a route.',
+  ),
   'ai.models.list': channel(
     z.object({ connectionId: R.AiResourceIdSchema.optional() }),
     z.array(R.ModelDefinitionSchema),

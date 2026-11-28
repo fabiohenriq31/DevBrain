@@ -20,6 +20,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -112,6 +113,27 @@ const launch = async () => {
 };
 
 const SECRET = `smoke-secret-${crypto.randomUUID()}`;
+const controlledProvider = createServer((req, res) => {
+  const authorized = req.headers.authorization === `Bearer ${SECRET}`;
+  res.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' });
+  res.end(
+    JSON.stringify(
+      authorized
+        ? {
+            data: [
+              { id: 'coder-free', context_window: 32768 },
+              { id: 'coder-paid', context_window: 131072 },
+            ],
+          }
+        : { error: { message: 'invalid key' } },
+    ),
+  );
+});
+await new Promise((resolve) => controlledProvider.listen(0, '127.0.0.1', resolve));
+const controlledAddress = controlledProvider.address();
+if (!controlledAddress || typeof controlledAddress === 'string')
+  throw new Error('No controlled provider');
+const controlledUrl = `http://127.0.0.1:${controlledAddress.port}/v1`;
 const first = await launch();
 const evaluate = first.evaluate;
 
@@ -130,6 +152,7 @@ const checks = JSON.parse(
   r.electron = info.ok ? info.data.electronVersion : null;
   const reg = await window.devbrain.invoke('projects.register', { rootPath: ${JSON.stringify(projectDir)} });
   r.registerOk = reg.ok && reg.data.isGitRepository === true;
+  r.projectId = reg.ok ? reg.data.id : null;
   if (!reg.ok) r.registerError = JSON.stringify(reg.error);
   const dup = await window.devbrain.invoke('projects.register', { rootPath: ${JSON.stringify(projectDir)} });
   r.duplicateRejected = !dup.ok && dup.error.code === 'ALREADY_EXISTS';
@@ -214,6 +237,46 @@ const executionCheck = await evaluate(
 );
 Object.assign(checks, executionCheck);
 
+// Real Electron IPC against a controlled local provider; no user credentials or external APIs.
+const onboardingCheck = await evaluate(
+  `(async () => {
+    const key = await window.devbrain.invoke('credentials.store', { storage: 'os-encrypted', label: 'Controlled Groq', secret: __KEY__ });
+    const invalid = await window.devbrain.invoke('credentials.store', { storage: 'os-encrypted', label: 'Controlled invalid', secret: 'invalid-local-test' });
+    const endpoint = await window.devbrain.invoke('ai.endpoints.save', { id: 'ep-controlled-groq', providerId: 'groq', baseUrl: __URL__, protocol: 'openai-chat', documentationUrl: null });
+    const connection = await window.devbrain.invoke('ai.connections.save', { id: 'conn-controlled-groq', providerId: 'groq', endpointId: 'ep-controlled-groq', credentialId: key.data.id, enabled: true, status: 'unknown', lastVerifiedAt: null });
+    const discovered = await window.devbrain.invoke('ai.connections.discover', { id: 'conn-controlled-groq' });
+    const model = await window.devbrain.invoke('ai.models.save', { id: 'model-controlled-free', providerId: 'groq', upstreamModelId: 'coder-free', name: 'Coder Free', capabilities: { input: ['text'], output: ['text'], tools: false, streaming: true, structuredOutput: false, reasoning: false, contextTokens: 32768, outputTokens: null }, pricing: null, lifecycle: 'unknown', sourceId: 'provider-api', verifiedAt: null });
+    await window.devbrain.invoke('ai.endpoints.save', { id: 'ep-remote-groq', providerId: 'groq', baseUrl: 'https://api.groq.com/openai/v1', protocol: 'openai-chat', documentationUrl: null });
+    await window.devbrain.invoke('ai.connections.save', { id: 'conn-remote-groq', providerId: 'groq', endpointId: 'ep-remote-groq', credentialId: key.data.id, enabled: true, status: 'unknown', lastVerifiedAt: null });
+    const route = await window.devbrain.invoke('ai.routes.save', { id: 'route-remote-spoof', modelId: 'model-controlled-free', connectionId: 'conn-remote-groq', priority: 10, enabled: true, localOnly: true });
+    // A remote endpoint cannot be disguised as local.
+    const validRoute = await window.devbrain.invoke('ai.routes.save', { id: 'route-controlled-free', modelId: 'model-controlled-free', connectionId: 'conn-controlled-groq', priority: 10, enabled: true, localOnly: false });
+    const policySaved = await window.devbrain.invoke('ai.projectPolicy.save', { projectId: __PROJECT__, privacyClass: 'restricted' });
+    const policyRead = await window.devbrain.invoke('ai.projectPolicy.get', { projectId: __PROJECT__ });
+    await window.devbrain.invoke('ai.connections.save', { id: 'conn-controlled-invalid', providerId: 'groq', endpointId: 'ep-controlled-groq', credentialId: invalid.data.id, enabled: true, status: 'unknown', lastVerifiedAt: null });
+    const rejected = await window.devbrain.invoke('ai.connections.discover', { id: 'conn-controlled-invalid' });
+    const listed = await Promise.all([
+      window.devbrain.invoke('ai.connections.list', {}),
+      window.devbrain.invoke('ai.models.list', {}),
+      window.devbrain.invoke('ai.routes.list', {}),
+    ]);
+    return {
+      controlledAuth: discovered.ok && discovered.data.authenticated,
+      multipleModels: discovered.ok && discovered.data.models.length === 2,
+      invalidCredentialRejected: !rejected.ok && rejected.error.code === 'CREDENTIAL_UNAVAILABLE',
+      modelPersisted: model.ok && listed[1].ok && listed[1].data.some((item) => item.id === model.data.id),
+      routePersisted: validRoute.ok && listed[2].ok && listed[2].data.some((item) => item.id === validRoute.data.id),
+      localSpoofRejected: !route.ok,
+      connectionPersisted: connection.ok && listed[0].ok && listed[0].data.some((item) => item.id === connection.data.id && item.status === 'ready'),
+      projectPrivacyPersisted: policySaved.ok && policyRead.ok && policyRead.data.privacyClass === 'restricted',
+    };
+  })()`
+    .replace('__KEY__', JSON.stringify(SECRET))
+    .replace('__URL__', JSON.stringify(controlledUrl))
+    .replaceAll('__PROJECT__', JSON.stringify(checks.projectId)),
+);
+Object.assign(checks, onboardingCheck);
+
 // ---- simulated crash (kill without clean shutdown) + restart ----
 first.ws.close();
 child.kill('SIGKILL');
@@ -246,11 +309,35 @@ const after = await second.evaluate(
     await new Promise((res) => setTimeout(res, 100));
   }
   r.uiAiCenterMounted = document.querySelectorAll('[role="tab"]').length === 11;
+  const marketplaceTab = [...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent?.includes('Marketplace'));
+  marketplaceTab?.click();
+  for (let i = 0; i < 20 && ![...document.querySelectorAll('button')].some((button) => button.textContent?.includes('Cadastro assistido')); i += 1) {
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  [...document.querySelectorAll('button')].find((button) => button.textContent?.includes('Cadastro assistido'))?.click();
+  for (let i = 0; i < 20 && !document.querySelector('[role="dialog"]'); i += 1) {
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  const onboardingDialog = document.querySelector('[role="dialog"]');
+  r.wizardPreventsFalseCompletion = !!onboardingDialog && !onboardingDialog.textContent?.includes('Concluir cadastro') && onboardingDialog.textContent?.includes('Escolher credencial');
+  r.wizardScrollEnabled = !!onboardingDialog && getComputedStyle(onboardingDialog.children[1]).overflowY === 'auto';
+  onboardingDialog?.querySelector('button[aria-label="Fechar"]')?.click();
+  if (navItems[0]) navItems[0].click();
+  for (let i = 0; i < 20 && !document.querySelector('[data-testid="workspace-composer-scroll"]'); i += 1) {
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  const composer = document.querySelector('[data-testid="workspace-composer-scroll"]');
+  r.workspaceScrollEnabled = !!composer && getComputedStyle(composer).overflowY === 'auto';
+  for (let i = 0; i < 30 && !document.querySelector('select option[value="model-controlled-free"]'); i += 1) {
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  r.gatewayModelSelectorMounted = !!document.querySelector('select option[value="model-controlled-free"]');
   return r;
 })()`.replaceAll('__SID__', checks?.sessionId ?? ''),
 );
 Object.assign(checks, after);
 delete checks.sessionId;
+delete checks.projectId;
 const ws = second.ws;
 
 ws.close();
@@ -258,6 +345,7 @@ child.kill();
 await exited();
 await sleep(500);
 await rm(tmp, { recursive: true, force: true }).catch(() => {});
+await new Promise((resolve) => controlledProvider.close(() => resolve()));
 
 console.log(JSON.stringify(checks, null, 2));
 const expected = {
@@ -299,6 +387,18 @@ const expected = {
   uiTerminalMounted: true,
   aiChannelContractValid: true,
   uiAiCenterMounted: true,
+  workspaceScrollEnabled: true,
+  gatewayModelSelectorMounted: true,
+  wizardPreventsFalseCompletion: true,
+  wizardScrollEnabled: true,
+  controlledAuth: true,
+  multipleModels: true,
+  invalidCredentialRejected: true,
+  modelPersisted: true,
+  routePersisted: true,
+  localSpoofRejected: true,
+  connectionPersisted: true,
+  projectPrivacyPersisted: true,
 };
 const failures = Object.entries(expected).filter(([k, v]) => checks?.[k] !== v);
 if (failures.length) {

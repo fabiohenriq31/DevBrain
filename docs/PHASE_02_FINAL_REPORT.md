@@ -1,9 +1,34 @@
 # Fase 02 — relatório de consolidação (estado verificável)
 
-Data: 2026-11-27. Branch: `phase-02/consolidation`. Base: `develop` em
+Data: 2026-11-28. Branch: `phase-02/consolidation`. Base: `develop` em
 `3cd7161`; merge de `phase-02/claude-intelligence` em `aeb403f`, que já contém
 o gateway do Codex. A interface Antigravity veio de `develop`.
 PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
+
+## Correção do onboarding real (28/11)
+
+- O novo canal `ai.connections.discover` verifica a credencial e lista modelos
+  antes de criar uma rota. OpenRouter verifica a chave em `/key`, pois `/models`
+  é público. Groq, Google Gemini, OpenAI e Anthropic usam as listagens oficiais;
+  Ollama e runtimes locais fazem descoberta sem enviar chaves.
+- O assistente segue uma sequência de ações verificadas: credencial existente ou
+  nova, conexão, autenticação e modelos, modelo salvo, rota salva, política do
+  projeto. O botão de conclusão relê conexão, modelo, rota e política do Core e
+  exige rota elegível na explicação do roteador. A fila antiga `11/11` só mostra
+  rota salva quando a persistência real confirma; cadastros parciais podem ser
+  retomados com a referência do cofre já existente.
+- Preços zero/pagos e suporte a ferramentas entram apenas quando declarados nos
+  metadados de OpenRouter. Groq e Gemini conservam preço e ferramentas como
+  desconhecidos quando a API não os fornece. O teste de inferência ocorre após
+  a rota e propaga `projectId`; só informa êxito após resultado real.
+- O Workspace lista diretamente modelos com conexão pronta e rota habilitada,
+  por meio de inferência nativa do gateway sob política do projeto. Esta
+  conversa não edita arquivos nem executa comandos; a integração de ferramentas
+  seguras ao agente nativo permanece pendente.
+- Teste Electron isolado usa um provedor HTTP controlado para verificar cofre,
+  autenticação, descoberta, credencial inválida, persistência após reinício,
+  seleção do modelo no Workspace e rolagem do compositor. Não acessa dados
+  reais nem APIs pagas.
 
 ## Entregas integradas
 
@@ -90,11 +115,11 @@ desconhecidos até verificação explícita por conta e modelo.
 
 ## Validação e aceite
 
-`pnpm validate`: TypeScript, lint, Prettier, 198 testes, varredura de segredos,
+`pnpm validate`: TypeScript, lint, Prettier, 201 testes, varredura de segredos,
 build e smoke Electron aprovados na consolidação. O smoke cobre a regressão
 da Fase 01, armazenamento cifrado, sessões, recuperação, execução e UI.
 
-Conexões autenticadas: **0**. Inferências externas validadas: **0**. Modelos
+Conexões externas autenticadas neste teste isolado: **0**. Inferências externas validadas: **0**. Modelos
 locais validados neste host: **0**. Programação pelo OpenCode através do gateway:
 **não demonstrada**. Fallback entre dois provedores independentes:
 **não demonstrado**. Nenhuma API paga foi consumida. Assim, o cenário principal
@@ -105,8 +130,10 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.750.866 bytes; SHA-256
-`B6D8D620C5FF36299FA36C386B2C986E4EAD1FCC4E53ACB611047FB1245E9A29`).
+(120.754.670 bytes; SHA-256
+`9D573074AC47CE110B98877C5105C252E472596EDD62CF772FBF90C50F72FB1F`).
+O executável empacotado em `release/win-unpacked` também passou no smoke Electron
+com perfil descartável e provedor local controlado.
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.
@@ -115,9 +142,12 @@ tocados.
 
 1. Abra o DevBrain e importe um projeto Git de teste.
 2. Na Central de IA, escolha um perfil e confira a documentação e o endpoint.
-3. Guarde a chave no cofre pelo assistente, cadastre um modelo e configure sua rota.
-4. Valide a conexão e configure a política de privacidade e orçamento do projeto.
-5. Execute inferência apenas após confirmar oferta, preço e cotas da conta.
+3. Reutilize a chave já guardada no cofre ou cadastre uma nova pelo assistente;
+   registre a conexão e valide a autenticação pela descoberta oficial.
+4. Escolha um modelo descoberto, salve a rota e configure privacidade e orçamento
+   do projeto. O assistente só conclui quando a rota é elegível.
+5. Autorize o teste de inferência quando quiser confirmar a operação real e
+   confira o modelo disponível no Workspace.
 
 ## Pendências objetivas para continuação
 

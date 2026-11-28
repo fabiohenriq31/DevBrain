@@ -147,6 +147,15 @@ Base: `origin/phase-02/contracts` (`4ada206`, descendente da consolidação da F
 
 ### Codex: `phase-02/codex-ai-gateway` (2026-11-27)
 
+Correção de consolidação em `phase-02/consolidation` (2026-11-28):
+descoberta autenticada de modelos antes de rota (`ai.connections.discover`),
+reutilização segura de credenciais existentes, retomada do assistente pela
+persistência real, rota e política por projeto, seletor direto de modelos no
+Workspace. `pnpm validate` passou com 201 testes; o executável empacotado
+passou no smoke Electron com provedor controlado. Inferência externa com as
+credenciais do proprietário permanece para validação manual; nenhuma foi lida
+ou utilizada durante o desenvolvimento.
+
 | Item | Status | Evidência |
 | --- | --- | --- |
 | Contratos 0.5.0 da Fase 02 | ✅ | `phase-02/contracts`, PR #5, validação completa da base inicial |

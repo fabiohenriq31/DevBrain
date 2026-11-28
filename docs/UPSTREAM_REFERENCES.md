@@ -8,6 +8,8 @@
 | [Anthropic Messages](https://platform.claude.com/docs/en/api/messages) | Documentação oficial consultada em 2026-11-27; sem código copiado | Formato do transporte TypeScript. |
 | [Google Gemini](https://aistudio.google.com/api-reference/generate-content) | Documentação oficial consultada em 2026-11-27; sem código copiado | Formato do transporte TypeScript. |
 | [Ollama](https://docs.ollama.com/api/chat), [Generate](https://docs.ollama.com/api/generate) e [List models](https://docs.ollama.com/api/tags) | Documentação oficial consultada em 2026-11-27; sem código copiado | Transporte, descoberta de modelos, download, remoção e medição local por contadores reais de tokens/duração. |
+| [OpenRouter Models](https://openrouter.ai/docs/api/api-reference/models/get-models) e [Current key](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key) | Documentação oficial consultada em 2026-11-28; sem código copiado | Prova da chave separada do catálogo público; importação limitada de preço por token, contexto e suporte a ferramentas declarado. |
+| [Groq Models](https://console.groq.com/docs/api-reference) e [Gemini Models](https://aistudio.google.com/api-reference/models) | Documentação oficial consultada em 2026-11-28; sem código copiado | Listagem autenticada de modelos; preço e ferramentas ausentes continuam desconhecidos. |
 
 FreeLLMAPI, Free LLM Proxy Router, LiteLLM e demais projetos citados na missão
 orientaram a análise de arquitetura. Nenhum arquivo de código ou dados desses

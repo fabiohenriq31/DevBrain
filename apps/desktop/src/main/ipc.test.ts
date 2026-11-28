@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,6 +17,7 @@ import { OperationalExecutionService } from '@devbrain/execution-engine';
 import { LocalGitService } from '@devbrain/git-engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHandlers } from './ipc.js';
+import { createGatewayForCore } from './gateway.js';
 import { isTrustedRendererUrl } from './security.js';
 
 const exec = promisify(execFile);
@@ -29,6 +31,61 @@ const testCipher = {
 };
 
 describe('desktop main IPC handlers & security boundaries', () => {
+  it('reuses a vault credential bound through an AI connection for authenticated discovery', async () => {
+    const upstream = createServer((req, res) => {
+      res.writeHead(req.headers.authorization === 'Bearer stored-key' ? 200 : 401, {
+        'content-type': 'application/json',
+      });
+      res.end(
+        JSON.stringify(
+          req.headers.authorization === 'Bearer stored-key'
+            ? { data: [{ id: 'coder-a', context_window: 32768 }, { id: 'coder-b' }] }
+            : { error: { message: 'invalid' } },
+        ),
+      );
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = upstream.address();
+      if (!address || typeof address === 'string') throw new Error('No server address');
+      const { core } = await setup();
+      const ref = await core.credentials.store({
+        storage: 'os-encrypted',
+        label: 'Groq existing',
+        secret: 'stored-key',
+      });
+      expect(ref.providerId).toBeNull();
+      const gateway = createGatewayForCore(core);
+      gateway.saveEndpoint({
+        id: 'ep-groq',
+        providerId: 'groq',
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        protocol: 'openai-chat',
+        documentationUrl: null,
+      });
+      gateway.saveConnection({
+        id: 'conn-groq',
+        providerId: 'groq',
+        endpointId: 'ep-groq',
+        credentialId: ref.id,
+        enabled: true,
+        status: 'unknown',
+        lastVerifiedAt: null,
+      });
+      const result = await gateway.discoverConnection('conn-groq');
+      expect(result).toMatchObject({
+        authenticated: true,
+        models: [
+          { upstreamModelId: 'coder-a', contextTokens: 32768 },
+          { upstreamModelId: 'coder-b' },
+        ],
+      });
+      expect(JSON.stringify(result)).not.toContain('stored-key');
+      expect(gateway.connections()[0]?.status).toBe('ready');
+    } finally {
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
+  });
   const tempDirs: string[] = [];
 
   afterEach(async () => {

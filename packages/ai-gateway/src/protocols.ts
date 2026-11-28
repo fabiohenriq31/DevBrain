@@ -1,4 +1,10 @@
-import { DevBrainError, type InferenceRequest, type ProviderEndpoint } from '@devbrain/contracts';
+import {
+  DevBrainError,
+  DiscoveredProviderModelSchema,
+  type DiscoveredProviderModel,
+  type InferenceRequest,
+  type ProviderEndpoint,
+} from '@devbrain/contracts';
 import { SafeHttpTransport } from './transport.js';
 
 type JsonObject = Record<string, unknown>;
@@ -8,6 +14,15 @@ const array = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 const number = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+const positiveInt = (value: unknown): number | null => {
+  const n = number(value);
+  return n !== null && Number.isInteger(n) && n > 0 ? n : null;
+};
+const tokenPrice = (value: unknown): number | null => {
+  if (typeof value !== 'string' || !/^(?:\d+)(?:\.\d+)?$/.test(value)) return null;
+  const amount = Number(value) * 1_000_000;
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+};
 
 export interface Generation {
   content: string;
@@ -230,6 +245,117 @@ const build = (
 /** One protocol normalization point; no tools or side effects are granted to model output. */
 export class ProtocolTransport {
   constructor(private readonly http: SafeHttpTransport = new SafeHttpTransport()) {}
+
+  /** Authenticated discovery only. A public model catalog never proves a private key. */
+  async discoverModels(
+    endpoint: ProviderEndpoint,
+    providerId: string,
+    credential: string | null,
+  ): Promise<DiscoveredProviderModel[]> {
+    const supported = [
+      'openrouter',
+      'groq',
+      'google',
+      'openai',
+      'anthropic',
+      'ollama',
+      'lmstudio',
+      'llama-cpp',
+    ];
+    if (!supported.includes(providerId))
+      throw new DevBrainError('UNSUPPORTED', 'Authenticated model discovery is unavailable');
+    const local = ['ollama', 'lmstudio', 'llama-cpp'].includes(providerId);
+    if (!credential && !local)
+      throw new DevBrainError('CREDENTIAL_UNAVAILABLE', 'Credential required');
+    const base = endpoint.baseUrl.replace(/\/+$/, '');
+    const allowLoopback = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname);
+    const headers: Record<string, string> = { accept: 'application/json' };
+    if (providerId === 'google' && credential) headers['x-goog-api-key'] = credential;
+    else if (providerId === 'anthropic' && credential) {
+      headers['x-api-key'] = credential;
+      headers['anthropic-version'] = '2023-06-01';
+    } else if (credential && !local) headers.authorization = `Bearer ${credential}`;
+    // OpenRouter's models endpoint is public. Authenticate against the key endpoint first.
+    if (providerId === 'openrouter') {
+      const auth = await this.http.json({
+        url: `${base}/key`,
+        method: 'GET',
+        headers,
+        allowLoopback,
+        timeoutMs: 10_000,
+      });
+      if (auth.status !== 200 || object(auth.data).error) throw apiError(auth.status, auth.data);
+    }
+    const sourceUrl = `${base}${providerId === 'anthropic' ? '/v1/models' : providerId === 'ollama' ? '/api/tags' : '/models'}`;
+    const observedAt = new Date().toISOString();
+    const entries: DiscoveredProviderModel[] = [];
+    let nextPage: string | null = null;
+    for (let page = 0; page < (providerId === 'google' ? 10 : 1); page++) {
+      const url = new URL(sourceUrl);
+      if (providerId === 'google') {
+        url.searchParams.set('pageSize', '100');
+        if (nextPage) url.searchParams.set('pageToken', nextPage);
+      }
+      const response = await this.http.json({
+        url: url.toString(),
+        method: 'GET',
+        headers,
+        allowLoopback,
+        timeoutMs: 15_000,
+      });
+      if (response.status !== 200 || object(response.data).error)
+        throw apiError(response.status, response.data);
+      const root = object(response.data);
+      const list = array(
+        providerId === 'google' || providerId === 'ollama' ? root.models : root.data,
+      );
+      for (const item of list) {
+        if (entries.length >= 1000) break;
+        const raw = object(item);
+        const id = text(raw.id) || text(raw.name);
+        if (!id || id.length > 300) continue;
+        const params = array(raw.supported_parameters).filter(
+          (p): p is string => typeof p === 'string',
+        );
+        const rawPrice = object(raw.pricing);
+        const input = providerId === 'openrouter' ? tokenPrice(rawPrice.prompt) : null;
+        const output = providerId === 'openrouter' ? tokenPrice(rawPrice.completion) : null;
+        const pricing =
+          input !== null && output !== null
+            ? {
+                currency: 'USD',
+                inputPerMillion: input,
+                outputPerMillion: output,
+                cachedInputPerMillion: null,
+                verifiedAt: observedAt,
+                sourceUrl,
+              }
+            : null;
+        const model = DiscoveredProviderModelSchema.parse({
+          upstreamModelId: id.replace(/^models\//, providerId === 'google' ? '' : 'models/'),
+          name: text(raw.displayName) || text(raw.name) || id,
+          tools:
+            providerId === 'openrouter' && Array.isArray(raw.supported_parameters)
+              ? params.includes('tools')
+              : null,
+          contextTokens:
+            positiveInt(raw.context_length) ??
+            positiveInt(raw.context_window) ??
+            positiveInt(raw.inputTokenLimit),
+          outputTokens:
+            positiveInt(object(raw.top_provider).max_completion_tokens) ??
+            positiveInt(raw.outputTokenLimit),
+          pricing,
+          sourceUrl,
+          observedAt,
+        });
+        entries.push(model);
+      }
+      nextPage = providerId === 'google' ? text(root.nextPageToken) || null : null;
+      if (!nextPage || entries.length >= 1000) break;
+    }
+    return entries;
+  }
 
   /** Read-only credential and model probe. Never performs billable inference. */
   async probeModel(

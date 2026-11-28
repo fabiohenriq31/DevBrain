@@ -1,15 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, Menu, app } from 'electron';
-import { DevBrainError, ipcEventName } from '@devbrain/contracts';
-import {
-  AiGateway,
-  OllamaRuntime,
-  OpenAiLocalRuntime,
-  ProviderCatalog,
-} from '@devbrain/ai-gateway';
+import { ipcEventName } from '@devbrain/contracts';
+import { OllamaRuntime, OpenAiLocalRuntime, ProviderCatalog } from '@devbrain/ai-gateway';
 import { OperationalExecutionService } from '@devbrain/execution-engine';
 import { startCore, type StartedCore } from './core.js';
+import { createGatewayForCore } from './gateway.js';
 import { registerIpc } from './ipc.js';
 import { applyProcessHardening, hardenSession, hardenWebContents } from './security.js';
 
@@ -91,14 +87,7 @@ void app.whenReady().then(() => {
     }
   });
   const core = started.core;
-  const gateway = core
-    ? new AiGateway(core.db.driver, async (id, providerId) => {
-        const ref = (await core.credentials.list()).find((item) => item.id === id);
-        if (!ref || ref.providerId !== providerId)
-          throw new DevBrainError('PERMISSION_DENIED', 'Credential is not bound to this provider');
-        return core.credentials.resolve(id, { providerId, reason: 'ai.inference' });
-      })
-    : null;
+  const gateway = core ? createGatewayForCore(core) : null;
   const catalog = core ? new ProviderCatalog(core.db.driver) : null;
   registerIpc({
     core,

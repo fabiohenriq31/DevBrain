@@ -441,6 +441,7 @@ export const AiResourceCenterView = ({
         {activeTab === 'marketplace' ? (
           <MarketplaceWizardSection
             snapshot={snapshot}
+            activeProjectId={activeProject?.id ?? null}
             credentials={credentials}
             projectPrivacy={projectPrivacy}
             approvedProviderIds={strategyDraft.allowedProviderIds}

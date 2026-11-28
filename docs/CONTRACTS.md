@@ -1,6 +1,6 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.7.1**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.8.0**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
 
 0.7.1 amplia `LocalModel.modelId` para identificadores upstream com `/`, comuns em
@@ -138,6 +138,13 @@ isso fizer sentido (por exemplo, exibir "desconhecido" na UI). O main recusa um 
 com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
+
+### 0.8.0 (onboarding verificável de provedores)
+
+Adiciona `DiscoveredProviderModel` com preço, ferramentas e limites de contexto
+explícitos (valores ausentes = `null`), `ConnectionDiscovery` e o canal
+`ai.connections.discover`. A consulta de autenticação e modelos não depende de
+rota nem faz inferência. Contratos anteriores permanecem aceitos.
 
 ### 0.7.0 (Fase 02, inteligência de recursos — Claude)
 

@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 import { DiffViewer } from '../components/DiffViewer';
 import { TerminalPane } from '../components/TerminalPane';
+import { GatewayAgentPanel } from './GatewayAgentPanel';
 import { PRIVACY_CLASSIFICATIONS, type ProjectPrivacyClass } from '../lib/ai-center';
 import { describeError, invoke, subscribe, type DescribedError } from '../lib/bridge';
 import {
@@ -621,6 +622,7 @@ export const WorkspaceView = ({
 
   const topComposerPane = (
     <div
+      data-testid="workspace-composer-scroll"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -817,6 +819,9 @@ export const WorkspaceView = ({
       ) : null}
 
       {/* Agent Selection & Composer */}
+      {activeProject ? (
+        <GatewayAgentPanel projectId={activeProject.id} language={language} />
+      ) : null}
       {agents.length === 0 ? (
         <Banner
           tone="info"

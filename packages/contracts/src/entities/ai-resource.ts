@@ -119,6 +119,27 @@ export const ModelDefinitionSchema = z.object({
 });
 export type ModelDefinition = z.infer<typeof ModelDefinitionSchema>;
 
+/** Metadata returned by an authenticated provider model listing; null means unverified. */
+export const DiscoveredProviderModelSchema = z.object({
+  upstreamModelId: z.string().min(1).max(300),
+  name: z.string().min(1).max(300),
+  tools: z.boolean().nullable(),
+  contextTokens: PositiveInt.nullable(),
+  outputTokens: PositiveInt.nullable(),
+  pricing: PricingDefinitionSchema.nullable(),
+  sourceUrl: SafeUrl,
+  observedAt: TimestampSchema,
+});
+export type DiscoveredProviderModel = z.infer<typeof DiscoveredProviderModelSchema>;
+
+export const ConnectionDiscoverySchema = z.object({
+  connectionId: Id,
+  authenticated: z.boolean(),
+  models: z.array(DiscoveredProviderModelSchema).max(1000),
+  observedAt: TimestampSchema,
+});
+export type ConnectionDiscovery = z.infer<typeof ConnectionDiscoverySchema>;
+
 export const ModelAvailabilitySchema = z.object({
   modelId: Id,
   connectionId: Id,

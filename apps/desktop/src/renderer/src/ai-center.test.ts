@@ -720,6 +720,7 @@ describe('Phase 02 — Multi-provider model grouping, local hardware estimates &
     const marketplaceHtml = renderToStaticMarkup(
       React.createElement(MarketplaceWizardSection, {
         snapshot,
+        activeProjectId: null,
         credentials: [],
         projectPrivacy: 'personal-private',
         approvedProviderIds: ['prov-1'],

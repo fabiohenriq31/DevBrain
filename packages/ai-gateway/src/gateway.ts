@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   BillingPolicySchema,
+  ConnectionDiscoverySchema,
   DevBrainError,
   InferenceRequestSchema,
   InferenceResultSchema,
@@ -16,6 +17,7 @@ import {
   type BillingPolicy,
   type BudgetStatus,
   type CostState,
+  type ConnectionDiscovery,
   type ExplainedRoutingDecision,
   type InferenceEvent,
   type InferenceRequest,
@@ -156,6 +158,38 @@ export class AiGateway {
   }
   connections(): ProviderConnection[] {
     return read(this.db, 'ai_connections', ProviderConnectionSchema);
+  }
+  async discoverConnection(id: string): Promise<ConnectionDiscovery> {
+    const connection = this.connections().find((item) => item.id === id);
+    if (!connection) throw new DevBrainError('NOT_FOUND', 'Connection missing');
+    const endpoint = this.endpoints().find((item) => item.id === connection.endpointId);
+    if (!endpoint || endpoint.providerId !== connection.providerId)
+      throw new DevBrainError('NOT_FOUND', 'Connection endpoint missing');
+    const local = ['ollama', 'lmstudio', 'llama-cpp'].includes(connection.providerId);
+    const credential =
+      connection.credentialId && !local
+        ? await this.resolveCredential(connection.credentialId, connection.providerId)
+        : null;
+    let models;
+    try {
+      models = await this.protocol.discoverModels(endpoint, connection.providerId, credential);
+    } catch (error) {
+      if (DevBrainError.is(error) && error.code === 'CREDENTIAL_UNAVAILABLE')
+        this.saveConnection({
+          ...connection,
+          status: 'invalid-credential',
+          lastVerifiedAt: new Date().toISOString(),
+        });
+      throw error;
+    }
+    const observedAt = new Date().toISOString();
+    this.saveConnection({ ...connection, status: 'ready', lastVerifiedAt: observedAt });
+    return ConnectionDiscoverySchema.parse({
+      connectionId: id,
+      authenticated: !local,
+      models,
+      observedAt,
+    });
   }
   async validateConnection(id: string): Promise<ModelAvailability> {
     const connection = this.connections().find((item) => item.id === id);

@@ -102,6 +102,108 @@ const startServer = async (respond: RequestListener) => {
 };
 
 describe('safe HTTP and protocol parsing', () => {
+  it('authenticates OpenRouter separately from its public model catalog and preserves price/tool evidence', async () => {
+    const upstream = await startServer((req, res) => {
+      if (req.url === '/v1/key' && req.headers.authorization !== 'Bearer valid') {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'invalid' } }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify(
+          req.url === '/v1/key'
+            ? { data: { label: 'test' } }
+            : {
+                data: [
+                  {
+                    id: 'lab/coder:free',
+                    name: 'Coder Free',
+                    supported_parameters: ['tools'],
+                    context_length: 32000,
+                    pricing: { prompt: '0', completion: '0' },
+                  },
+                  {
+                    id: 'lab/coder-pro',
+                    name: 'Coder Pro',
+                    supported_parameters: ['tools'],
+                    pricing: { prompt: '0.000001', completion: '0.000002' },
+                  },
+                  { id: 'lab/unknown', name: 'Unknown' },
+                ],
+              },
+        ),
+      );
+    });
+    try {
+      const configured = { ...endpoint(upstream.url, 'ep-openrouter', 'openrouter') };
+      const database = db();
+      const gateway = new AiGateway(database.driver, async () => 'valid');
+      gateway.saveEndpoint(configured);
+      gateway.saveConnection({
+        ...connection('conn-openrouter', configured.id, 'openrouter'),
+        credentialId: 'crd_00000000-0000-4000-8000-000000000001',
+        status: 'unknown',
+      });
+      const result = await gateway.discoverConnection('conn-openrouter');
+      expect(result.authenticated).toBe(true);
+      expect(result.models).toHaveLength(3);
+      expect(result.models[0]).toMatchObject({
+        tools: true,
+        contextTokens: 32000,
+        pricing: { inputPerMillion: 0, outputPerMillion: 0 },
+      });
+      expect(result.models[1]?.pricing).toMatchObject({ inputPerMillion: 1, outputPerMillion: 2 });
+      expect(result.models[2]).toMatchObject({ tools: null, pricing: null });
+      expect(gateway.connections()[0]?.status).toBe('ready');
+      gateway.saveModel({
+        ...model('model-free', 'openrouter'),
+        upstreamModelId: result.models[0]!.upstreamModelId,
+        capabilities: {
+          ...model('model-free', 'openrouter').capabilities,
+          tools: result.models[0]!.tools === true,
+        },
+        pricing: result.models[0]!.pricing,
+      });
+      gateway.saveRoute({
+        id: 'route-free',
+        modelId: 'model-free',
+        connectionId: 'conn-openrouter',
+        enabled: true,
+        priority: 10,
+        localOnly: false,
+      });
+      const resumed = new AiGateway(database.driver, async () => 'valid');
+      expect(resumed.connections()[0]?.status).toBe('ready');
+      expect(resumed.routes()).toMatchObject([{ id: 'route-free', modelId: 'model-free' }]);
+    } finally {
+      await upstream.close();
+    }
+  });
+
+  it('rejects an invalid key without registering a route or a ready connection', async () => {
+    const upstream = await startServer((_req, res) => {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'invalid' } }));
+    });
+    try {
+      const database = db();
+      const gateway = new AiGateway(database.driver, async () => 'invalid');
+      gateway.saveEndpoint(endpoint(upstream.url, 'ep-groq', 'groq'));
+      gateway.saveConnection({
+        ...connection('conn-groq', 'ep-groq', 'groq'),
+        credentialId: 'crd_00000000-0000-4000-8000-000000000001',
+        status: 'unknown',
+      });
+      await expect(gateway.discoverConnection('conn-groq')).rejects.toMatchObject({
+        code: 'CREDENTIAL_UNAVAILABLE',
+      });
+      expect(gateway.connections()[0]?.status).toBe('invalid-credential');
+      expect(gateway.routes()).toHaveLength(0);
+    } finally {
+      await upstream.close();
+    }
+  });
   it('rejects SSRF and credential-bearing URLs before a request', async () => {
     const transport = new SafeHttpTransport();
     await expect(transport.open({ url: 'http://127.0.0.1:7777/api' })).rejects.toMatchObject({

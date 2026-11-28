@@ -320,6 +320,7 @@ export const createHandlers = ({
       return connection;
     },
     'ai.connections.validate': (input) => g().validateConnection(input.id),
+    'ai.connections.discover': (input) => g().discoverConnection(input.id),
     'ai.connections.remove': (input) => {
       g().removeConnection(input.id);
       return { removed: true as const };
