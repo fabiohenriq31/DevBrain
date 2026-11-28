@@ -394,8 +394,12 @@ export const ProjectsView = ({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '320px 1fr',
+        gridTemplateColumns: 'minmax(230px, 310px) minmax(0, 1fr)',
+        gridTemplateRows: 'minmax(0, 1fr)',
+        flex: '1 1 0%',
+        width: '100%',
         height: '100%',
+        minWidth: 0,
         minHeight: 0,
         overflow: 'hidden',
       }}
@@ -406,7 +410,9 @@ export const ProjectsView = ({
           borderRight: `1px solid ${tokens.color.border}`,
           display: 'flex',
           flexDirection: 'column',
+          minWidth: 0,
           minHeight: 0,
+          overflow: 'hidden',
           background: tokens.color.surface,
         }}
       >
@@ -418,6 +424,7 @@ export const ProjectsView = ({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 6,
+            flexShrink: 0,
           }}
         >
           <strong style={{ fontSize: 13 }}>{pt ? 'Projetos' : 'Projects'}</strong>
@@ -465,9 +472,13 @@ export const ProjectsView = ({
         />
 
         <div
+          data-scroll-region="projects-list"
           style={{
-            flex: 1,
+            flex: '1 1 0%',
+            minWidth: 0,
+            minHeight: 0,
             overflowY: 'auto',
+            overflowX: 'hidden',
             padding: 8,
             display: 'flex',
             flexDirection: 'column',
@@ -497,6 +508,7 @@ export const ProjectsView = ({
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
+                    flexShrink: 0,
                     gap: 4,
                     padding: '8px 10px',
                     borderRadius: tokens.radius.md,
@@ -545,9 +557,17 @@ export const ProjectsView = ({
       </div>
 
       {/* Right detail */}
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+      >
         {feedback ? (
-          <div style={{ padding: '10px 16px 0 16px' }}>
+          <div style={{ padding: '10px 16px 0 16px', flexShrink: 0 }}>
             <Banner
               tone={feedback.tone}
               actions={
@@ -562,7 +582,7 @@ export const ProjectsView = ({
         ) : null}
 
         {!selected ? (
-          <div style={{ padding: 24 }}>
+          <div style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: 24 }}>
             <EmptyState
               icon={<FolderGit2 size={26} />}
               title={pt ? 'Selecione ou cadastre um projeto' : 'Select or register a project'}
@@ -602,6 +622,7 @@ export const ProjectsView = ({
                 justifyContent: 'space-between',
                 gap: 12,
                 flexWrap: 'wrap',
+                flexShrink: 0,
               }}
             >
               <div>
@@ -688,9 +709,13 @@ export const ProjectsView = ({
             />
 
             <div
+              data-scroll-region="projects-detail"
               style={{
-                flex: 1,
+                flex: '1 1 0%',
+                minWidth: 0,
+                minHeight: 0,
                 overflowY: 'auto',
+                overflowX: 'auto',
                 padding: 16,
                 display: 'flex',
                 flexDirection: 'column',

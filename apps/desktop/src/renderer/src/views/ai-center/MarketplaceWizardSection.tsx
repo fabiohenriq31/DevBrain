@@ -566,54 +566,71 @@ export const MarketplaceWizardSection = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
+        flex: '1 1 0%',
         height: '100%',
+        minWidth: 0,
         minHeight: 0,
+        overflow: 'hidden',
         background: tokens.color.surface,
       }}
     >
-      {/* Search + Quick Assisted Wizard */}
+      {/* Pinned Search + Quick Assisted Wizard */}
       <div
         style={{
-          padding: 10,
+          padding: '8px 10px',
           borderBottom: `1px solid ${tokens.color.border}`,
+          display: 'flex',
+          gap: 6,
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          <Input
+            value={query}
+            placeholder={
+              pt
+                ? `Pesquisar ${snapshot.catalog.length} provedores ou modelos…`
+                : 'Search providers or models…'
+            }
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ paddingLeft: 28, height: 28 }}
+          />
+          <Search
+            size={13}
+            style={{
+              position: 'absolute',
+              left: 8,
+              top: 7,
+              color: tokens.color.textFaint,
+              pointerEvents: 'none',
+            }}
+          />
+        </div>
+        <Button
+          size="xs"
+          variant="primary"
+          icon={<Sparkles size={12} />}
+          onClick={() => openWizardFor(selectedItem?.entry)}
+        >
+          {pt ? 'Cadastro assistido' : 'Guided setup'}
+        </Button>
+      </div>
+
+      {/* Scrollable Filters + Resumable Queue + Provider List */}
+      <div
+        data-scroll-region="marketplace-list"
+        style={{
+          flex: '1 1 0%',
+          minWidth: 0,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: 8,
           display: 'flex',
           flexDirection: 'column',
           gap: 8,
         }}
       >
-        <div style={{ display: 'flex', gap: 6 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <Input
-              value={query}
-              placeholder={
-                pt
-                  ? `Pesquisar ${snapshot.catalog.length} provedores ou modelos…`
-                  : 'Search providers or models…'
-              }
-              onChange={(e) => setQuery(e.target.value)}
-              style={{ paddingLeft: 28, height: 28 }}
-            />
-            <Search
-              size={13}
-              style={{
-                position: 'absolute',
-                left: 8,
-                top: 7,
-                color: tokens.color.textFaint,
-                pointerEvents: 'none',
-              }}
-            />
-          </div>
-          <Button
-            size="xs"
-            variant="primary"
-            icon={<Sparkles size={12} />}
-            onClick={() => openWizardFor(selectedItem?.entry)}
-          >
-            {pt ? 'Cadastro assistido' : 'Guided setup'}
-          </Button>
-        </div>
-
         {/* Compact 12-filter matrix */}
         <div
           style={{
@@ -762,183 +779,189 @@ export const MarketplaceWizardSection = ({
             <option value="with-models">{pt ? 'Com modelos' : 'Has models'}</option>
           </Select>
         </div>
-      </div>
 
-      {/* Queue of Free/Assisted Signups */}
-      {signupQueue.length > 0 ? (
-        <div
-          style={{
-            padding: '8px 10px',
-            borderBottom: `1px solid ${tokens.color.border}`,
-            background: tokens.color.surfaceElevated,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 5,
-          }}
-        >
-          <div style={{ fontSize: 11, fontWeight: 700, color: tokens.color.textMuted }}>
-            {pt
-              ? `Fila de cadastros assistidos (${signupQueue.length})`
-              : `Assisted signup queue (${signupQueue.length})`}
-          </div>
-          {signupQueue.slice(0, 4).map((qItem) => (
-            <div
-              key={qItem.providerId}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 6,
-                fontSize: 11.5,
-              }}
-            >
-              <span>
-                <strong>{qItem.providerName}</strong>{' '}
-                <Badge tone={qItem.status === 'completed' ? 'success' : 'info'} mono>
-                  {qItem.currentStep}/11
-                </Badge>
-              </span>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  onClick={() => {
-                    const entry = snapshot.catalog.find((c) => c.id === qItem.providerId);
-                    openWizardFor(entry, qItem.currentStep);
-                  }}
-                >
-                  {pt ? 'Retomar' : 'Resume'}
-                </Button>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  icon={<Trash2 size={11} />}
-                  onClick={() =>
-                    onUpdateSignupQueue(
-                      signupQueue.filter((x) => x.providerId !== qItem.providerId),
-                    )
-                  }
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {/* Virtualized/windowed fast list (caps initial DOM render at 150 items with search narrowing) */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 4,
-        }}
-      >
-        {filteredCatalog.length === 0 ? (
+        {/* Queue of Free/Assisted Signups */}
+        {signupQueue.length > 0 ? (
           <div
             style={{
-              padding: 18,
-              textAlign: 'center',
-              fontSize: 12,
-              color: tokens.color.textMuted,
+              padding: '8px 10px',
+              borderRadius: tokens.radius.md,
+              border: `1px solid ${tokens.color.border}`,
+              background: tokens.color.surfaceElevated,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 5,
+              flexShrink: 0,
             }}
           >
-            {snapshot.catalog.length === 0
-              ? pt
-                ? 'Nenhum catálogo carregado no main ainda. Você pode iniciar um Cadastro Assistido manual ou importar um snapshot em Diagnóstico.'
-                : 'No catalog entries loaded yet.'
-              : pt
-                ? 'Nenhum provedor corresponde aos filtros atuais.'
-                : 'No providers match current filters.'}
-          </div>
-        ) : (
-          filteredCatalog.slice(0, 150).map((item) => {
-            const active = selectedItem?.entry.id === item.entry.id;
-            return (
-              <button
-                key={item.entry.id}
-                type="button"
-                onClick={() => setSelectedProviderId(item.entry.id)}
+            <div style={{ fontSize: 11, fontWeight: 700, color: tokens.color.textMuted }}>
+              {pt
+                ? `Fila de cadastros assistidos (${signupQueue.length})`
+                : `Assisted signup queue (${signupQueue.length})`}
+            </div>
+            {signupQueue.slice(0, 4).map((qItem) => (
+              <div
+                key={qItem.providerId}
                 style={{
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                  padding: '7px 9px',
-                  borderRadius: tokens.radius.md,
-                  border: `1px solid ${active ? tokens.color.accent : tokens.color.border}`,
-                  background: active ? tokens.color.accentSubtle : tokens.color.surfaceElevated,
-                  color: tokens.color.text,
-                  cursor: 'pointer',
-                  textAlign: 'left',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 6,
+                  fontSize: 11.5,
                 }}
               >
-                <div
+                <span>
+                  <strong>{qItem.providerName}</strong>{' '}
+                  <Badge tone={qItem.status === 'completed' ? 'success' : 'info'} mono>
+                    {qItem.currentStep}/11
+                  </Badge>
+                </span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={() => {
+                      const entry = snapshot.catalog.find((c) => c.id === qItem.providerId);
+                      openWizardFor(entry, qItem.currentStep);
+                    }}
+                  >
+                    {pt ? 'Retomar' : 'Resume'}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    icon={<Trash2 size={11} />}
+                    onClick={() =>
+                      onUpdateSignupQueue(
+                        signupQueue.filter((x) => x.providerId !== qItem.providerId),
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {/* Provider list (caps initial DOM render at 150 items with search narrowing) */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            flexShrink: 0,
+          }}
+        >
+          {filteredCatalog.length === 0 ? (
+            <div
+              style={{
+                padding: 18,
+                textAlign: 'center',
+                fontSize: 12,
+                color: tokens.color.textMuted,
+              }}
+            >
+              {snapshot.catalog.length === 0
+                ? pt
+                  ? 'Nenhum catálogo carregado no main ainda. Você pode iniciar um Cadastro Assistido manual ou importar um snapshot em Diagnóstico.'
+                  : 'No catalog entries loaded yet.'
+                : pt
+                  ? 'Nenhum provedor corresponde aos filtros atuais.'
+                  : 'No providers match current filters.'}
+            </div>
+          ) : (
+            filteredCatalog.slice(0, 150).map((item) => {
+              const active = selectedItem?.entry.id === item.entry.id;
+              return (
+                <button
+                  key={item.entry.id}
+                  type="button"
+                  onClick={() => setSelectedProviderId(item.entry.id)}
                   style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 6,
+                    flexDirection: 'column',
+                    flexShrink: 0,
+                    gap: 4,
+                    padding: '7px 9px',
+                    borderRadius: tokens.radius.md,
+                    border: `1px solid ${active ? tokens.color.accent : tokens.color.border}`,
+                    background: active ? tokens.color.accentSubtle : tokens.color.surfaceElevated,
+                    color: tokens.color.text,
+                    cursor: 'pointer',
+                    textAlign: 'left',
                   }}
                 >
-                  <strong style={{ fontSize: 12.5 }}>{item.entry.name}</strong>
-                  <Badge
-                    tone={
-                      item.opState === 'ready'
-                        ? 'success'
-                        : item.opState === 'unavailable'
-                          ? 'danger'
-                          : item.opState === 'configured'
-                            ? 'info'
-                            : 'outline'
-                    }
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
                   >
-                    {item.opState === 'ready'
-                      ? pt
-                        ? 'Operacional'
-                        : 'Ready'
-                      : item.opState === 'configured'
+                    <strong style={{ fontSize: 12.5 }}>{item.entry.name}</strong>
+                    <Badge
+                      tone={
+                        item.opState === 'ready'
+                          ? 'success'
+                          : item.opState === 'unavailable'
+                            ? 'danger'
+                            : item.opState === 'configured'
+                              ? 'info'
+                              : 'outline'
+                      }
+                    >
+                      {item.opState === 'ready'
                         ? pt
-                          ? 'Configurado'
-                          : 'Configured'
-                        : item.opState === 'unavailable'
+                          ? 'Operacional'
+                          : 'Ready'
+                        : item.opState === 'configured'
                           ? pt
-                            ? 'Indisponível'
-                            : 'Unavailable'
-                          : pt
-                            ? 'Descoberto'
-                            : 'Discovered'}
-                  </Badge>
-                </div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  <Badge tone="outline" mono>
-                    {item.entry.kind}
-                  </Badge>
-                  {item.hasVerifiedFreeModel ? (
-                    <Badge tone="success">{pt ? 'Gratuito verificado' : 'Verified free'}</Badge>
-                  ) : (
-                    <Badge tone="neutral">{pt ? 'Oferta desconhecida' : 'Unknown offer'}</Badge>
-                  )}
-                  {item.provModels.length > 0 ? (
-                    <Badge tone="info" mono>
-                      {item.provModels.length} mod.
+                            ? 'Configurado'
+                            : 'Configured'
+                          : item.opState === 'unavailable'
+                            ? pt
+                              ? 'Indisponível'
+                              : 'Unavailable'
+                            : pt
+                              ? 'Descoberto'
+                              : 'Discovered'}
                     </Badge>
-                  ) : null}
-                </div>
-              </button>
-            );
-          })
-        )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    <Badge tone="outline" mono>
+                      {item.entry.kind}
+                    </Badge>
+                    {item.hasVerifiedFreeModel ? (
+                      <Badge tone="success">{pt ? 'Gratuito verificado' : 'Verified free'}</Badge>
+                    ) : (
+                      <Badge tone="neutral">{pt ? 'Oferta desconhecida' : 'Unknown offer'}</Badge>
+                    )}
+                    {item.provModels.length > 0 ? (
+                      <Badge tone="info" mono>
+                        {item.provModels.length} mod.
+                      </Badge>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
 
   const rightDetailPane = (
     <div
+      data-scroll-region="marketplace-detail"
       style={{
+        flex: '1 1 0%',
         height: '100%',
+        minWidth: 0,
+        minHeight: 0,
         overflowY: 'auto',
+        overflowX: 'auto',
         padding: 14,
         display: 'flex',
         flexDirection: 'column',
@@ -1261,12 +1284,23 @@ export const MarketplaceWizardSection = ({
   );
 
   return (
-    <div style={{ height: '100%', minHeight: 500, display: 'flex', flexDirection: 'column' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <SplitPane
         direction="horizontal"
-        initialSize={370}
-        minSize={300}
-        maxSize={520}
+        initialSize={310}
+        minSize={220}
+        maxSize={480}
         first={leftListPane}
         second={rightDetailPane}
       />

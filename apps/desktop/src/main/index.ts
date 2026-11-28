@@ -29,8 +29,8 @@ const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     width: 1400,
     height: 860,
-    minWidth: 1024,
-    minHeight: 640,
+    minWidth: 760,
+    minHeight: 480,
     show: false,
     title: 'DevBrain AI',
     autoHideMenuBar: true,

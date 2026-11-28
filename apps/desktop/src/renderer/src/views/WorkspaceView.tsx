@@ -674,7 +674,7 @@ export const WorkspaceView = ({
 
   if (!activeProject) {
     return (
-      <div style={{ padding: 28 }}>
+      <div style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: 28 }}>
         <EmptyState
           icon={<FolderOpen size={28} />}
           title={pt ? 'Nenhum projeto selecionado no Workspace' : 'No active project selected'}
@@ -720,12 +720,17 @@ export const WorkspaceView = ({
 
   const topComposerPane = (
     <div
+      data-scroll-region="workspace-composer"
       style={{
         display: 'flex',
         flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
         height: '100%',
+        minWidth: 0,
         minHeight: 0,
         overflowY: 'auto',
+        overflowX: 'auto',
         padding: '10px 14px',
         gap: 10,
       }}
@@ -738,6 +743,7 @@ export const WorkspaceView = ({
           justifyContent: 'space-between',
           gap: 10,
           flexWrap: 'wrap',
+          flexShrink: 0,
           paddingBottom: 8,
           borderBottom: `1px solid ${tokens.color.border}`,
         }}
@@ -1248,7 +1254,18 @@ export const WorkspaceView = ({
   );
 
   const bottomOperationalPane = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <Tabs
         tabs={[
           {
@@ -1285,7 +1302,16 @@ export const WorkspaceView = ({
         onChange={setBottomTab}
       />
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: '1 1 0%',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+      >
         {bottomTab === 'terminal' ? (
           <TerminalPane
             executionId={activeExecutionId}
@@ -1308,7 +1334,17 @@ export const WorkspaceView = ({
         ) : null}
 
         {bottomTab === 'events' ? (
-          <div style={{ height: '100%', overflowY: 'auto', padding: 12 }}>
+          <div
+            data-scroll-region="workspace-events"
+            style={{
+              flex: '1 1 0%',
+              minWidth: 0,
+              minHeight: 0,
+              overflowY: 'auto',
+              overflowX: 'auto',
+              padding: 12,
+            }}
+          >
             <DataTable
               columns={[
                 {
@@ -1395,9 +1431,13 @@ export const WorkspaceView = ({
 
         {bottomTab === 'files' ? (
           <div
+            data-scroll-region="workspace-files"
             style={{
-              height: '100%',
+              flex: '1 1 0%',
+              minWidth: 0,
+              minHeight: 0,
               overflowY: 'auto',
+              overflowX: 'auto',
               padding: 12,
               display: 'flex',
               flexDirection: 'column',
@@ -1459,7 +1499,17 @@ export const WorkspaceView = ({
         ) : null}
 
         {bottomTab === 'result' ? (
-          <div style={{ height: '100%', overflowY: 'auto', padding: 14 }}>
+          <div
+            data-scroll-region="workspace-result"
+            style={{
+              flex: '1 1 0%',
+              minWidth: 0,
+              minHeight: 0,
+              overflowY: 'auto',
+              overflowX: 'auto',
+              padding: 14,
+            }}
+          >
             {!executionResult ? (
               <EmptyState
                 title={pt ? 'Sem resultado final disponível' : 'No terminal result yet'}
@@ -1540,9 +1590,13 @@ export const WorkspaceView = ({
 
         {bottomTab === 'history' ? (
           <div
+            data-scroll-region="workspace-history"
             style={{
-              height: '100%',
+              flex: '1 1 0%',
+              minWidth: 0,
+              minHeight: 0,
               overflowY: 'auto',
+              overflowX: 'auto',
               padding: 12,
               display: 'flex',
               flexDirection: 'column',

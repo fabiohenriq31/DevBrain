@@ -374,7 +374,18 @@ export const AgentsProvidersView = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <div
         style={{
           padding: embedded ? '8px 12px' : '12px 16px',
@@ -384,6 +395,7 @@ export const AgentsProvidersView = ({
           justifyContent: 'space-between',
           gap: 12,
           flexWrap: 'wrap',
+          flexShrink: 0,
           background: tokens.color.surface,
         }}
       >
@@ -457,9 +469,13 @@ export const AgentsProvidersView = ({
       />
 
       <div
+        data-scroll-region="agents-providers-body"
         style={{
-          flex: 1,
+          flex: '1 1 0%',
+          minWidth: 0,
+          minHeight: 0,
           overflowY: 'auto',
+          overflowX: 'auto',
           padding: 16,
           display: 'flex',
           flexDirection: 'column',

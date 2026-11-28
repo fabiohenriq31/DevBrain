@@ -59,6 +59,7 @@ export const TerminalPane = ({
   onReplay,
   language,
 }: TerminalPaneProps) => {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -124,9 +125,20 @@ export const TerminalPane = ({
     renderedKeyRef.current = '';
     renderedCountRef.current = 0;
 
+    const syncBufferAttrs = () => {
+      const root = rootRef.current;
+      if (!root) return;
+      root.setAttribute('data-viewport-y', String(term.buffer.active.viewportY));
+      root.setAttribute('data-base-y', String(term.buffer.active.baseY));
+    };
+    const scrollDisp = term.onScroll(syncBufferAttrs);
+    const writeDisp = term.onWriteParsed(syncBufferAttrs);
+    syncBufferAttrs();
+
     const observer = new ResizeObserver(() => {
       try {
         fit.fit();
+        syncBufferAttrs();
       } catch {
         /* ignore transient layout resize */
       }
@@ -134,6 +146,8 @@ export const TerminalPane = ({
     observer.observe(el);
 
     return () => {
+      scrollDisp.dispose();
+      writeDisp.dispose();
       observer.disconnect();
       term.dispose();
       termRef.current = null;
@@ -168,6 +182,11 @@ export const TerminalPane = ({
     if (batch) {
       term.write(batch, () => {
         if (autoScroll) term.scrollToBottom();
+        const root = rootRef.current;
+        if (root) {
+          root.setAttribute('data-viewport-y', String(term.buffer.active.viewportY));
+          root.setAttribute('data-base-y', String(term.buffer.active.baseY));
+        }
       });
     }
   }, [executionId, filter, filteredEvents, autoScroll]);
@@ -200,12 +219,17 @@ export const TerminalPane = ({
 
   return (
     <div
+      ref={rootRef}
       data-testid="terminal-pane"
       style={{
         display: 'flex',
         flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
         height: '100%',
+        minWidth: 0,
         minHeight: 0,
+        overflow: 'hidden',
         background: '#090c11',
       }}
     >
@@ -219,6 +243,7 @@ export const TerminalPane = ({
           background: tokens.color.surface,
           borderBottom: `1px solid ${tokens.color.border}`,
           flexWrap: 'wrap',
+          flexShrink: 0,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
