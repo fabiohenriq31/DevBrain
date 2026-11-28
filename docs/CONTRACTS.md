@@ -1,10 +1,11 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.7.1**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.8.0**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
 
-0.7.1 amplia `LocalModel.modelId` para identificadores upstream com `/`, comuns em
-LM Studio e llama.cpp. Os canais IPC da versão 0.7.0 permanecem compatíveis.
+0.8.0 acrescenta chamadas de ferramentas ao gateway e as opções do agente nativo
+(`devbrain-agent`). 0.7.1 ampliou `LocalModel.modelId` para identificadores upstream com
+`/`. Todos os canais anteriores permanecem compatíveis.
 
 Os contratos são a única interface entre os módulos dos três agentes. São escritos em
 zod, o que dá tipos estáticos (`z.infer`) e validação em runtime nas fronteiras de
@@ -138,6 +139,27 @@ isso fizer sentido (por exemplo, exibir "desconhecido" na UI). O main recusa um 
 com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
+
+### 0.8.0 (Fase 02, ponte de ferramentas e agente nativo — Claude)
+
+Somente aditiva (MINOR). Namespace IPC `devbrain:v1` mantido.
+
+- `ToolDefinition` (nome `^[a-zA-Z0-9_-]{1,64}$`, descrição, `parameters` em JSON Schema
+  limitado a 64 KB), `ToolCall` (`id`, `name`, `arguments` como texto JSON bruto produzido
+  pelo modelo), `ToolChoice` (`auto` | `none` | `required` | `{ name }`) e
+  `ToolCallState` (`proposed`, `invalid`, `denied`, `awaiting-approval`, `running`,
+  `succeeded`, `failed`, `unknown`).
+- `InferenceMessage` ganha `toolCalls?` (turno do assistente, chamadas paralelas),
+  `name?` e `isError?` (resultado de ferramenta); `toolCallId` correlaciona resultado e
+  chamada. `InferenceRequest` ganha `tools?`, `toolChoice?` e `parallelToolCalls?`;
+  `InferenceResult` ganha `toolCalls?`; `InferenceEvent` ganha `tool-call-delta`
+  (fragmentos de argumentos em streaming, correlacionados por `index`).
+- `GatewayAgentOptions` em `PromptPayload.gateway?`: estratégia de roteamento, modelo fixo
+  ou roteamento automático, comandos pré-autorizados (sem shell) e limites de turnos,
+  chamadas, tokens, duração e saída por turno.
+- Evento de execução `tool-call` ganha `callId?`, `state?` e `result?` (resumo redigido).
+- Canal `ai.policies.list`: estratégias de roteamento configuradas.
+- O gateway **transporta** chamadas e resultados; nunca executa ferramentas.
 
 ### 0.7.0 (Fase 02, inteligência de recursos — Claude)
 

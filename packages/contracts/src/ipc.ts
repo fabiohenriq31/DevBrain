@@ -445,6 +445,17 @@ export const IPC_CHANNELS = {
   ),
   'ai.routes.list': channel(Empty, z.array(R.ModelRouteSchema), 'Configured model routes.'),
   'ai.routes.save': channel(R.ModelRouteSchema, R.ModelRouteSchema, 'Save a model route.'),
+  'ai.policies.list': channel(
+    Empty,
+    z.array(
+      z.object({
+        policy: R.RoutingPolicySchema,
+        billing: R.BillingPolicySchema,
+        privacy: R.PrivacyPolicySchema,
+      }),
+    ),
+    'Configured routing strategies (for choosing how a gateway agent routes).',
+  ),
   'ai.policies.configure': channel(
     z.object({
       policy: R.RoutingPolicySchema,

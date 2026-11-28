@@ -1,6 +1,7 @@
 # Fase 02 — relatório de consolidação (estado verificável)
 
-Data: 2026-11-27. Branch: `phase-02/consolidation`. Base: `develop` em
+Data: 2026-11-27. Branch: `phase-02/consolidation` (ponte de ferramentas vinda de
+`phase-02/agent-bridge`). Base: `develop` em
 `3cd7161`; merge de `phase-02/claude-intelligence` em `aeb403f`, que já contém
 o gateway do Codex. A interface Antigravity veio de `develop`.
 PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
@@ -34,8 +35,8 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
   OpenCode CLI sem ponte verificada ao gateway só pode operar em projeto público
   com autorização explícita para custo pago e ilimitado. Esse modo usa a conta
   própria do CLI e **não** recebe as garantias de cotas do gateway.
-  O servidor local devolve `501` para chamadas de ferramentas, em vez de
-  ignorá-las e apresentar uma execução de código fictícia.
+  O servidor local transporta chamadas de ferramentas desde os contratos 0.8.0,
+  sem executá-las (ver seção da ponte de ferramentas).
 - Benchmarks que executariam JavaScript gerado pelo modelo foram desativados:
   o permission model de Node não isola rede. A suíte exposta contém apenas
   avaliações estáticas/estruturadas. A interface agora consulta as suítes e
@@ -88,28 +89,87 @@ metadados das receitas são originais do DevBrain; não há código copiado.
 Ofertas, preços, limites, restrições regionais e privacidade permanecem
 desconhecidos até verificação explícita por conta e modelo.
 
+## Ponte de ferramentas e agente nativo
+
+- Contratos 0.8.0 com definições, chamadas, resultados, erros, chamadas paralelas, estados
+  de execução e fragmentos de argumentos em streaming correlacionados por índice e id.
+- Protocolos com ferramentas: Chat Completions (e `custom`), Anthropic Messages, Gemini e
+  Ollama, em requisição, histórico, resposta e streaming. O Responses API recusa ferramentas
+  com `UNSUPPORTED`. O roteador só admite modelos cadastrados com capacidade de ferramentas.
+- O servidor local traduz `tools`, `tool_choice`, `parallel_tool_calls`, mensagens `tool` e
+  `tool_calls`. Ele não executa ferramentas. `functions` legado continua `501`.
+- Agente nativo `devbrain-agent` (ADR-0029): listar, ler, buscar, editar por trecho único,
+  criar arquivo, `git status`/`git diff` e comandos pré-autorizados por id, sem shell. Cada
+  ação passa por `enforce`/`authorizeCommand`, com aprovações. Limites de turnos, chamadas,
+  tokens e duração. Repetição sem progresso encerra a execução. Efeito colateral de
+  resultado desconhecido não é repetido antes de verificação. A troca de modelo só ocorre
+  entre turnos, e o checkpoint leva o registro para a execução seguinte.
+- OpenCode: **não integrado como agente operacional**. A configuração do repositório pode
+  sobrepor provedores, plugins e MCP, e suas ferramentas rodam fora do Core. O bloqueio
+  existente foi mantido e não há afirmação de modo gratuito, local ou restrito para ele.
+
 ## Validação e aceite
 
-`pnpm validate`: TypeScript, lint, Prettier, 198 testes, varredura de segredos,
-build e smoke Electron aprovados na consolidação. O smoke cobre a regressão
-da Fase 01, armazenamento cifrado, sessões, recuperação, execução e UI.
+`pnpm validate`: TypeScript, lint, Prettier, 214 testes, varredura de segredos, build e
+smoke Electron aprovados no branch `phase-02/agent-bridge`.
 
-Conexões autenticadas: **0**. Inferências externas validadas: **0**. Modelos
-locais validados neste host: **0**. Programação pelo OpenCode através do gateway:
-**não demonstrada**. Fallback entre dois provedores independentes:
-**não demonstrado**. Nenhuma API paga foi consumida. Assim, o cenário principal
-de aceite da Fase 02 continua pendente de credenciais autorizadas e da ponte
-segura com o OpenCode.
+**Validado em ambiente controlado** (`packages/execution-engine/src/agent.e2e.test.ts`,
+com Core e AiGateway reais e um servidor OpenAI-compatível roteirizado em loopback, num
+repositório Git temporário):
+
+- o modelo lista e lê o código, executa o teste autorizado (falha), edita `src/sum.js`,
+  executa de novo (passa), consulta o diff e termina; evidências em eventos, uso e checkpoint;
+- `.env` negado pela política sem chegar ao modelo; fuga do workspace pedida e recusada;
+  comando fora da lista inválido; `write_file` sobre arquivo existente recusado;
+- fallback entre duas rotas controladas, com a troca registrada no limite do turno e o
+  histórico estruturado entregue inteiro à segunda rota;
+- estratégia gratuita ignora a rota paga sem chamá-la; projeto restrito não alcança rota
+  não local;
+- cancelamento durante um comando marca o resultado como desconhecido, e a execução seguinte
+  recebe a verificação pendente;
+- chamada repetida e limite de turnos encerram a execução.
+
+Testes de protocolo cobrem serialização e parsing por protocolo, com e sem streaming, e a
+ponte HTTP de ferramentas.
+
+**Com modelos reais: nada validado.** Conexões autenticadas: **0**. Inferências externas:
+**0**. Modelos locais neste host: **0** (sem Ollama, LM Studio ou llama.cpp). Nenhuma API
+paga foi consumida e nenhuma chave foi pedida.
+
+### Aceite com modelo real pelo proprietário
+
+Nunca envie chaves pelo chat nem pelo GitHub. A chave é digitada só no DevBrain e fica no
+cofre cifrado do sistema.
+
+1. Use uma cópia descartável de um projeto Git, nunca o projeto real.
+2. Central de IA: crie a conexão (perfil documentado ou modelo local), cadastre o modelo com
+   **ferramentas** habilitado somente se a documentação do provedor confirmar tool calling
+   para ele, e crie a rota. Para Ollama, use um modelo que a biblioteca do Ollama marque com
+   suporte a ferramentas.
+3. Configure uma estratégia "somente gratuito" ou "somente local" e a política do projeto.
+4. Registre o provedor "DevBrain Agent (AI Gateway)" a partir do catálogo de adapters e crie
+   um agente para ele.
+5. No Workspace, selecione o agente, a estratégia e "Roteamento automático"; mantenha o
+   comando `test: node --test` (ou o comando de teste do projeto, sem shell).
+6. Peça uma correção pequena com teste. Aprove a execução do comando quando solicitado.
+7. Confira os eventos (estado de cada chamada), o diff, o uso e o checkpoint. Para fallback,
+   cadastre duas rotas e desabilite a primeira durante a execução.
+
+Critério de aceite: tarefa concluída, teste passando, diff restrito aos arquivos esperados e
+nenhuma chamada fora das rotas da estratégia em `ai.usage.list`.
 
 ## Instalador
 
-Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
-`E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.750.866 bytes; SHA-256
-`B6D8D620C5FF36299FA36C386B2C986E4EAD1FCC4E53ACB611047FB1245E9A29`).
-Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
-em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
-tocados.
+Versão 0.2.0, Windows x64 NSIS, sem assinatura digital, gerado em `phase-02/agent-bridge`:
+`E:\www\DevBrainAi-agent\release\DevBrain AI Setup 0.2.0.exe` (120.761.351 bytes;
+SHA-256 `526968A2ED7219B3905199FFB6B88FDB06A75C273A9A03AA6D9B94D8242148E2`).
+
+Validado com diretório de instalação e `--user-data-dir` descartáveis: instalação silenciosa
+da 0.1.0, execução, atualização no mesmo diretório para 0.2.0 com os mesmos dados
+(migrations 1–2 da 0.1.0 preservadas, 3–5 aplicadas pela 0.2.0), smoke completo sobre o
+binário instalado e desinstalação silenciosa (executável, entrada no registro e atalhos
+removidos; dados do usuário mantidos, como configurado). Dados reais do usuário não foram
+tocados. Não testado: instalação interativa, máquina limpa sem dependências e assinatura.
 
 ## Primeira utilização
 
@@ -121,17 +181,14 @@ tocados.
 
 ## Pendências objetivas para continuação
 
-1. Conectar OpenCode ao `LocalGatewayServer` com credencial efêmera, política
-   vinculada ao projeto/sessão e isolamento efetivo de ferramentas. O CLI atual
-   **não** oferece essa garantia.
-2. Ampliar a leitura de cabeçalhos específicos de provedores, horário de
-   renovação e custos reportados; observações só surgem quando há definição
-   explícita e cabeçalho reconhecido.
-3. Integrar os demais canais IPC 0.7.0 à UI, recuperação de referências de
-   contexto e uso automático do handoff entre modelos,
-   configuração de endpoints locais personalizados e downloads em runtimes que
-   ofereçam API oficial para isso.
-4. Validar dois provedores independentes e fallback real com contas autorizadas.
-5. Finalizar testes de instalação e atualização em perfis descartáveis.
+1. Aceite com pelo menos um modelo real com ferramentas (nuvem gratuita ou local), seguindo
+   o procedimento acima, e fallback entre dois provedores independentes.
+2. OpenCode só poderá ser declarado integrado quando houver configuração que o repositório
+   não sobreponha e execução de ferramentas sob o Core, ou isolamento de SO verificado.
+3. Ampliar cabeçalhos de cota por provedor, horário de renovação e custos reportados.
+4. Demais canais IPC 0.7.0 na UI, recuperação de referências de contexto e handoff
+   automático entre modelos.
+5. Instalador assinado e teste em máquina limpa.
 
-Esta consolidação **não representa aceite completo da Fase 02**.
+O núcleo funcional da Fase 02 está implementado e validado em ambiente controlado; o aceite
+com modelos reais depende de credenciais ou runtimes locais do proprietário.

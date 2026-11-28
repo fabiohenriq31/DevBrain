@@ -345,6 +345,7 @@ export const createHandlers = ({
       g().saveRoute(input);
       return input;
     },
+    'ai.policies.list': () => g().policies(),
     'ai.policies.configure': (input) => {
       g().configurePolicy(input);
       return input.policy;

@@ -446,3 +446,60 @@ consentimento explícito.
    como aproximações (`Estimativa — não é garantia`), e `ai.local.pull` só é invocado após
    confirmação explícita (`confirm: true`), com acompanhamento em tempo real e cancelamento
    via `ai.local.cancelPull`.
+
+## ADR-0028 — O gateway transporta chamadas de ferramentas, nunca as executa
+
+**Status:** aceita (Fase 02)
+
+**Contexto.** Modelos só programam como agentes se puderem propor chamadas estruturadas. O
+servidor local devolvia `501` para qualquer ferramenta.
+
+**Decisão.** Contratos 0.8.0 modelam definições, chamadas, resultados, escolha, chamadas
+paralelas e fragmentos em streaming. Cada protocolo traduz para o formato documentado do
+provedor (Chat Completions, Anthropic Messages, Gemini, Ollama). O Responses API recusa
+ferramentas até haver implementação verificada. O roteador só admite modelos marcados com
+`capabilities.tools`. O servidor HTTP e o gateway não executam ferramentas. Chamadas
+malformadas (nome inválido, argumentos acima de 400 KB) são descartadas, nunca adivinhadas.
+Argumentos não são gravados no SQLite. Um fragmento de chamada emitido em streaming conta
+como saída exposta e impede fallback silencioso.
+
+**Consequências.** Clientes compatíveis com OpenAI podem usar ferramentas pelo gateway, e a
+segurança da execução fica com quem executa. Capacidade de ferramenta declarada errada no
+cadastro do modelo produz erro do provedor, não execução.
+
+## ADR-0029 — Agente nativo DevBrain em vez de OpenCode como agente operacional
+
+**Status:** aceita (Fase 02)
+
+**Contexto.** A integração do OpenCode pelo mecanismo de provedores personalizados exigiria
+confiar em configuração que o próprio repositório pode sobrepor (`.opencode`, configuração
+de sistema e de usuário, plugins e MCP). Suas ferramentas de arquivo e shell rodam no
+processo do OpenCode, fora de `enforce`/`authorizeCommand`. O CLI não está instalado neste
+host e não foi possível verificar o comportamento de `opencode run` com permissões `ask`.
+
+**Decisão.** O agente operacional da Fase 02 é o runtime nativo (`devbrain-agent`):
+
+- O modelo é chamado pelo gateway a cada turno, com projeto e sessão, então privacidade,
+  cotas, orçamento e elegibilidade valem para cada chamada.
+- Ferramentas mínimas: listar, ler (até 256 KB, sem binários), buscar literal, editar por
+  trecho único, criar arquivo novo, `git status`/`git diff` e comandos pré-autorizados pelo
+  usuário, escolhidos por id. Não há shell.
+- Toda operação passa por `core.authorization.enforce` (caminho real, symlinks, junctions,
+  exclusões, política e aprovações) ou `authorizeCommand`. Uma chamada vinda do modelo nunca
+  é aprovada automaticamente: vale a política do agente, inclusive pedidos de aprovação.
+- Limites rígidos de turnos, chamadas (8 por turno), tokens e duração. Repetir a mesma
+  chamada 3 vezes sem progresso encerra a execução. Uma ação com efeito colateral de
+  resultado desconhecido (cancelamento ou timeout durante a execução, falha de escrita) não é
+  repetida antes de uma verificação de estado.
+- Turnos inteiros sem streaming: um fallback do gateway troca de rota sem misturar saídas
+  parciais. A troca de modelo é registrada no limite do turno, com o histórico estruturado
+  preservado.
+- O checkpoint guarda o registro das chamadas e as verificações pendentes. A próxima
+  execução na mesma sessão recebe esse resumo como contexto.
+
+O OpenCode permanece bloqueado fora de projeto público com custo autorizado. Nenhuma
+afirmação de modo gratuito, local ou restrito é feita para ele.
+
+**Consequências.** Existe um agente funcional sob controle do Core e do gateway, testado de
+ponta a ponta com modelo roteirizado. A qualidade real depende do modelo configurado. Ainda
+não há orquestração multiagente nem retomada de turno parcial.

@@ -439,6 +439,11 @@ export class AiGateway {
     return run;
   }
 
+  /** Configured routing strategies with their billing and privacy policies. */
+  policies() {
+    return [...this.routing.values()].map((entry) => ({ ...entry }));
+  }
+
   /**
    * True when the routing policy can only reach routes with a known zero cost (no paid and no
    * unknown-cost routes), so requests under it carry no provider charge.

@@ -185,7 +185,7 @@ export const formatEventForTerminal = (event: ExecutionEvent): string => {
       return `\r\n${ANSI.magenta}[${event.role.toUpperCase()}]${ANSI.reset} ${safe}\r\n`;
     }
     case 'tool-call':
-      return `${ANSI.dim}[${time}]${ANSI.reset} ${ANSI.yellow}[FERRAMENTA]${ANSI.reset} ${sanitizeTerminalChunk(event.tool)}\r\n`;
+      return `${ANSI.dim}[${time}]${ANSI.reset} ${ANSI.yellow}[FERRAMENTA]${ANSI.reset} ${sanitizeTerminalChunk(event.tool)}${event.state ? ` ${sanitizeTerminalChunk(event.state)}` : ''}${event.result ? `\r\n  ${sanitizeTerminalChunk(event.result.slice(0, 600))}` : ''}\r\n`;
     case 'approval-required':
       return `${ANSI.yellow}[APROVAÇÃO NECESSÁRIA]${ANSI.reset} ${event.action} (${event.approvalId})\r\n`;
     case 'file-change':
@@ -263,7 +263,7 @@ export const extractPlainTranscript = (events: readonly ExecutionEvent[]): strin
         case 'message':
           return `[#${ev.seq} ${ev.role}] ${ev.text}`;
         case 'tool-call':
-          return `[#${ev.seq} tool:${ev.tool}] ${JSON.stringify(ev.input)}`;
+          return `[#${ev.seq} tool:${ev.tool}${ev.state ? ` ${ev.state}` : ''}] ${JSON.stringify(ev.input)}${ev.result ? ` -> ${ev.result}` : ''}`;
         case 'approval-required':
           return `[#${ev.seq} approval] ${ev.action} (${ev.approvalId})`;
         case 'file-change':
