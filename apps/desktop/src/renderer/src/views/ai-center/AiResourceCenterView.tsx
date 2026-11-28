@@ -5,6 +5,7 @@ import type {
   AgentSession,
   ApplicationSettings,
   BenchmarkResult,
+  CostRecord,
   CredentialReference,
   DependencyReport,
   ModelAvailability,
@@ -141,6 +142,7 @@ export const AiResourceCenterView = ({
   // Diagnostic inference streaming state
   const [activeInferenceRequestId, setActiveInferenceRequestId] = useState<string | null>(null);
   const [activeInferenceStream, setActiveInferenceStream] = useState<string>('');
+  const [lastInferenceCost, setLastInferenceCost] = useState<CostRecord | null>(null);
 
   const refreshGatewayAndCore = useCallback(async () => {
     setLoading(true);
@@ -265,6 +267,9 @@ export const AiResourceCenterView = ({
           (prev) => `${prev}\n[#${ev.seq} completed finish=${ev.result.finishReason}]\n`,
         );
         setActiveInferenceRequestId(null);
+        void callAiChannel('ai.cost.get', { requestId: ev.requestId }).then((out) => {
+          if (out.status === 'ok') setLastInferenceCost(out.data);
+        });
         if (ev.result.usage) {
           const usageItem = ev.result.usage;
           setSnapshot((s) => ({
@@ -306,6 +311,7 @@ export const AiResourceCenterView = ({
     const id = `diag-${Date.now()}`;
     setActiveInferenceRequestId(id);
     setActiveInferenceStream('');
+    setLastInferenceCost(null);
     const out = await callAiChannel('ai.inference.submit', {
       id,
       sessionId: null,
@@ -519,6 +525,7 @@ export const AiResourceCenterView = ({
             projects={projects}
             agents={agents}
             settings={settings}
+            activeProjectId={activeProject?.id ?? null}
             coreUsageDay={coreUsageDay}
             coreUsageMonth={coreUsageMonth}
             onQueryAccountCredit={handleQueryAccountCredit}
@@ -533,6 +540,7 @@ export const AiResourceCenterView = ({
             projects={projects}
             agents={agents}
             settings={settings}
+            activeProjectId={activeProject?.id ?? null}
             coreUsageDay={coreUsageDay}
             coreUsageMonth={coreUsageMonth}
             onQueryAccountCredit={handleQueryAccountCredit}
@@ -577,6 +585,7 @@ export const AiResourceCenterView = ({
             activeProjectId={activeProject?.id ?? null}
             activeInferenceStream={activeInferenceStream}
             activeInferenceRequestId={activeInferenceRequestId}
+            lastInferenceCost={lastInferenceCost}
             onSubmitDiagInference={handleSubmitDiagInference}
             onCancelDiagInference={handleCancelDiagInference}
             onRefreshAll={handleRefreshAll}

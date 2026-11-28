@@ -33,6 +33,7 @@ import type { SqlDriver } from '@devbrain/database';
 import {
   BenchmarkEngine,
   buildEvidence,
+  ContextOptimizer,
   IntelligenceStore,
   SUITES,
   RoutingPolicyEngine,
@@ -468,7 +469,13 @@ export class AiGateway {
   }
 
   async *stream(raw: InferenceRequest, signal?: AbortSignal): AsyncIterable<InferenceEvent> {
-    const request = InferenceRequestSchema.parse(raw);
+    const parsed = InferenceRequestSchema.parse(raw);
+    // Apply deterministic deduplication on the live path without budget-based omission.
+    // Omission needs a durable reference retrieval path before it can be enabled here.
+    const optimized = new ContextOptimizer().optimize(parsed.messages, {
+      budgetTokens: Number.MAX_SAFE_INTEGER,
+    });
+    const request = { ...parsed, messages: optimized.messages };
     if (this.db.get('SELECT request_id FROM ai_inference WHERE request_id=:id', { id: request.id }))
       throw new DevBrainError('ALREADY_EXISTS', 'Inference request already exists');
     const policies = this.routing.get(request.routingPolicyId);

@@ -3,6 +3,8 @@ import type {
   AgentSession,
   ApplicationSettings,
   BenchmarkResult,
+  CostRecord,
+  ExplainedRoutingDecision,
   FallbackAttempt,
   RoutingDecision,
   TaskCheckpoint,
@@ -94,6 +96,7 @@ export const RoutingStrategiesSection = ({
 
   // Router dry-run explanation
   const [routerDecision, setRouterDecision] = useState<RoutingDecision | null>(null);
+  const [routerExplanation, setRouterExplanation] = useState<ExplainedRoutingDecision | null>(null);
 
   const guardrails = useMemo(
     () =>
@@ -177,21 +180,28 @@ export const RoutingStrategiesSection = ({
   const handleSimulateRouter = async () => {
     if (!activeProjectId) return;
     setFeedback(null);
+    setRouterDecision(null);
+    setRouterExplanation(null);
     setBusy(true);
     try {
       const reqId = `dryrun-${Date.now()}`;
-      const res = await callAiChannel('ai.routes.select', {
+      const request = {
         id: reqId,
         sessionId: null,
         ...(activeProjectId ? { projectId: activeProjectId } : {}),
         modelId: null,
-        messages: [{ role: 'user', content: 'Inspecionar decisão do roteador.' }],
+        messages: [{ role: 'user' as const, content: 'Inspecionar decisão do roteador.' }],
         maxOutputTokens: 256,
         temperature: 0,
         stream: false,
         routingPolicyId: strategyDraft.policyId,
         idempotencyKey: null,
-      });
+      };
+      const [res, explanation] = await Promise.all([
+        callAiChannel('ai.routes.select', request),
+        callAiChannel('ai.routes.explain', request),
+      ]);
+      setRouterExplanation(explanation.status === 'ok' ? explanation.data : null);
       if (res.status === 'ok') {
         setRouterDecision(res.data);
       } else {
@@ -568,6 +578,21 @@ export const RoutingStrategiesSection = ({
               candidatas={routerDecision.candidateRouteIds.join(', ')}
             </div>
           </Banner>
+        ) : null}
+        {routerExplanation ? (
+          <div className="db-card" style={{ fontSize: 11 }}>
+            <div className="db-mono">
+              {pt ? 'Rotas classificadas' : 'Ranked routes'}:{' '}
+              {routerExplanation.ranked
+                .map((route) => `${route.routeId} (${route.score})`)
+                .join(', ') || (pt ? 'nenhuma' : 'none')}
+            </div>
+            {routerExplanation.excluded.map((route) => (
+              <div key={route.routeId}>
+                {route.routeId}: {route.reasons.map((reason) => reason.message).join('; ')}
+              </div>
+            ))}
+          </div>
         ) : null}
 
         <DataTable
@@ -954,6 +979,7 @@ export interface DiagnosticsSectionProps {
   activeProjectId: string | null;
   activeInferenceStream: string;
   activeInferenceRequestId: string | null;
+  lastInferenceCost: CostRecord | null;
   onSubmitDiagInference: (prompt: string, policyId: string) => Promise<void>;
   onCancelDiagInference: () => Promise<void>;
   onRefreshAll: () => Promise<void>;
@@ -966,6 +992,7 @@ export const DiagnosticsSection = ({
   activeProjectId,
   activeInferenceStream,
   activeInferenceRequestId,
+  lastInferenceCost,
   onSubmitDiagInference,
   onCancelDiagInference,
   onRefreshAll,
@@ -1145,6 +1172,16 @@ export const DiagnosticsSection = ({
             text={activeInferenceStream}
             maxHeight={160}
           />
+        ) : null}
+        {lastInferenceCost ? (
+          <div className="db-mono" style={{ fontSize: 11 }}>
+            {pt ? 'Custo da última inferência' : 'Last inference cost'}: {lastInferenceCost.state}{' '}
+            {lastInferenceCost.reconciledMicros === null
+              ? pt
+                ? '(valor desconhecido)'
+                : '(amount unknown)'
+              : `${lastInferenceCost.currency} ${(lastInferenceCost.reconciledMicros / 1_000_000).toFixed(6)}`}
+          </div>
         ) : null}
       </div>
 

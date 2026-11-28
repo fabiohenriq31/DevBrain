@@ -246,18 +246,28 @@ const request = (stream = false): InferenceRequest => ({
 
 describe('gateway fallback', () => {
   it('continues to a second eligible provider after a failed first route', async () => {
+    let forwardedMessages: { content: string }[] = [];
     const first = await startServer((_req, res) => {
       res.writeHead(429, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { code: 'rate_limit' } }));
     });
-    const second = await startServer((_req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          choices: [{ message: { content: 'second' }, finish_reason: 'stop' }],
-          usage: { prompt_tokens: 2, completion_tokens: 1 },
-        }),
-      );
+    const second = await startServer((req, res) => {
+      void (async () => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(Buffer.from(chunk as Uint8Array));
+        forwardedMessages = (
+          JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+            messages: { content: string }[];
+          }
+        ).messages;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            choices: [{ message: { content: 'second' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 2, completion_tokens: 1 },
+          }),
+        );
+      })();
     });
     try {
       const gateway = new AiGateway(db().driver, async () => {
@@ -303,9 +313,20 @@ describe('gateway fallback', () => {
           localOnly: false,
         });
       }
-      const result = await gateway.infer(request());
+      const input = request();
+      const repeated = `Repeated context ${'x'.repeat(300)}`;
+      input.messages = [
+        { role: 'assistant', content: repeated },
+        { role: 'assistant', content: repeated },
+        { role: 'user', content: 'Continue.' },
+      ];
+      const result = await gateway.infer(input);
       expect(result.content).toBe('second');
       expect(result.attempts).toHaveLength(1);
+      expect(forwardedMessages.filter((message) => message.content === repeated)).toHaveLength(1);
+      expect(
+        forwardedMessages.some((message) => message.content.includes('identical to message')),
+      ).toBe(true);
       expect(gateway.result(result.requestId)?.content).toBe('');
     } finally {
       await first.close();

@@ -23,7 +23,10 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
   `ai.projectPolicy.*` no processo main e não é gravada em `localStorage`.
   Diagnósticos e seleção de rotas enviam o projeto ativo; a interface bloqueia
   o diagnóstico sem projeto. O processo main valida `projectId` e sua
-  correspondência com a sessão em inferência e inspeção de rotas.
+  correspondência com a sessão em inferência e inspeção de rotas. A interface
+  consulta `ai.routes.explain`, `ai.budget.status`, `ai.quota.forecast` e
+  `ai.cost.get` para mostrar motivos de exclusão, orçamento reservado,
+  projeções de cota e custo da última inferência quando esses dados existem.
 - Execuções CLI incompatíveis com projeto restrito são bloqueadas no motor. O
   OpenCode CLI sem ponte verificada ao gateway só pode operar em projeto público
   com autorização explícita para custo pago e ilimitado. Esse modo usa a conta
@@ -31,6 +34,9 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
 - Benchmarks que executariam JavaScript gerado pelo modelo foram desativados:
   o permission model de Node não isola rede. A suíte exposta contém apenas
   avaliações estáticas/estruturadas.
+- O fluxo de inferência aplica deduplicação determinística de histórico antes
+  do roteamento e do envio ao provedor. Compactação com omissão e referências
+  segue desabilitada até existir recuperação durável dos trechos removidos.
 - Descoberta local por `GET /v1/models` para LM Studio e llama.cpp server,
   além da API nativa do Ollama. Identificadores upstream com `/` são aceitos
   pelos contratos 0.7.1. A porta padrão documentada do llama.cpp é 9931.
@@ -84,8 +90,8 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.747.346 bytes; SHA-256
-`9B6A7E9AA17DAB42D4B64C370A5211A1AE123DBBB69CD271D8FFA37DBAB67B46`).
+(120.748.122 bytes; SHA-256
+`BA27F5E0C18D1A15169A4943B5E68DB644FD8CA18B164E66065C558C52783C1A`).
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.
@@ -106,7 +112,8 @@ tocados.
 2. Ampliar a leitura de cabeçalhos específicos de provedores, horário de
    renovação e custos reportados; observações só surgem quando há definição
    explícita e cabeçalho reconhecido.
-3. Integrar os demais canais IPC 0.7.0 à UI, contexto e handoff ao fluxo real,
+3. Integrar os demais canais IPC 0.7.0 à UI, recuperação de referências de
+   contexto e handoff ao fluxo real,
    configuração de endpoints locais personalizados e downloads em runtimes que
    ofereçam API oficial para isso.
 4. Validar dois provedores independentes e fallback real com contas autorizadas.
