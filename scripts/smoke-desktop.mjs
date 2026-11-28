@@ -124,14 +124,26 @@ const controlledProvider = createServer((req, res) => {
   res.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' });
   res.end(
     JSON.stringify(
-      authorized
-        ? {
-            data: [
-              { id: 'coder-free', context_window: 32768 },
-              { id: 'coder-paid', context_window: 131072 },
-            ],
-          }
-        : { error: { message: 'invalid key' } },
+      !authorized
+        ? { error: { message: 'invalid key' } }
+        : req.url?.endsWith('/key')
+          ? { data: { label: 'controlled-key' } }
+          : {
+              data: [
+                {
+                  id: 'coder-free',
+                  context_window: 32768,
+                  supported_parameters: ['tools'],
+                  pricing: { prompt: '0', completion: '0' },
+                },
+                {
+                  id: 'coder-paid',
+                  context_window: 131072,
+                  supported_parameters: ['tools'],
+                  pricing: { prompt: '0.000001', completion: '0.000002' },
+                },
+              ],
+            },
     ),
   );
 });
@@ -284,6 +296,8 @@ const onboardingCheck = await evaluate(
 Object.assign(checks, onboardingCheck);
 
 // ---- simulated crash (kill without clean shutdown) + restart ----
+// First-run Electron safeStorage key material is written to Local State asynchronously.
+await sleep(12_000);
 first.ws.close();
 child.kill('SIGKILL');
 await exited();
@@ -342,6 +356,80 @@ const after = await second.evaluate(
 })()`.replaceAll('__SID__', checks?.sessionId ?? ''),
 );
 Object.assign(checks, after);
+const wizardUi = await second.evaluate(
+  `(async () => {
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 120));
+    const dialog = () => document.querySelector('[role="dialog"]');
+    const button = (label) => [...(dialog()?.querySelectorAll('button') ?? [])]
+      .find((item) => item.textContent?.includes(label));
+    const wait = async (label) => {
+      for (let i = 0; i < 40; i += 1) {
+        const found = button(label);
+        if (found && !found.disabled) return found;
+        await pause();
+      }
+      throw new Error('Wizard button unavailable: ' + label + ' / ' + dialog()?.textContent?.slice(-450));
+    };
+    const set = (element, value) => {
+      const proto = element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, value);
+      element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+    };
+    try {
+      document.querySelectorAll('.db-nav-item')[2]?.click();
+      await pause();
+      [...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent?.includes('Marketplace'))?.click();
+      await pause();
+      [...document.querySelectorAll('button')].find((item) => item.textContent?.includes('Cadastro assistido'))?.click();
+      await pause();
+      set(dialog().querySelector('input'), 'openrouter');
+      await pause();
+      (await wait('Escolher credencial')).click();
+      await pause();
+      const mode = dialog().querySelector('select');
+      set(mode, 'existing');
+      await pause();
+      const existing = [...dialog().querySelectorAll('select')].find((item) => [...item.options].some((option) => option.textContent?.startsWith('smoke (')));
+      const existingOption = [...existing.options].find((option) => option.textContent?.startsWith('smoke ('));
+      set(existing, existingOption.value);
+      (await wait('Armazenar credencial')).click();
+      const register = await wait('Registrar conexão no Gateway');
+      const base = [...dialog().querySelectorAll('input')].find((item) => item.value.includes('openrouter.ai'));
+      set(base, __URL__);
+      register.click();
+      (await wait('Executar validação de autenticação')).click();
+      const saveModel = await wait('Registrar modelo e avançar');
+      const models = [...dialog().querySelectorAll('select')].find((item) => [...item.options].some((option) => option.value === 'coder-free'));
+      set(models, 'coder-free');
+      saveModel.click();
+      (await wait('Salvar rota e configurar política')).click();
+      const finish = await wait('Concluir cadastro');
+      const privacy = [...dialog().querySelectorAll('select')].find((item) => [...item.options].some((option) => option.value === 'personal-private'));
+      set(privacy, 'personal-private');
+      const approval = [...dialog().querySelectorAll('input[type="checkbox"]')].find((item) => item.closest('label')?.textContent?.includes('Aprovo este provedor'));
+      approval?.click();
+      finish.click();
+      await wait('Fechar');
+      const [connections, modelsSaved, routes] = await Promise.all([
+        window.devbrain.invoke('ai.connections.list', {}),
+        window.devbrain.invoke('ai.models.list', {}),
+        window.devbrain.invoke('ai.routes.list', {}),
+      ]);
+      return {
+        wizardUiComplete: dialog()?.textContent?.includes('Configuração persistida') === true,
+        wizardUiPersisted: connections.ok && modelsSaved.ok && routes.ok &&
+          connections.data.some((c) => c.providerId === 'openrouter' && c.status === 'ready') &&
+          modelsSaved.data.some((m) => m.id === 'openrouter-coder-free' && m.pricing?.inputPerMillion === 0 && m.capabilities.tools) &&
+          routes.data.some((r) => r.modelId === 'openrouter-coder-free' && connections.data.some((c) => c.id === r.connectionId && c.providerId === 'openrouter')),
+      };
+    } catch (error) {
+      return { wizardUiComplete: false, wizardUiPersisted: false, wizardUiError: String(error?.stack ?? error), wizardUiText: dialog()?.textContent?.slice(-500) };
+    } finally {
+      dialog()?.querySelector('button[aria-label="Fechar"]')?.click();
+    }
+  })()`.replace('__URL__', JSON.stringify(controlledUrl)),
+);
+Object.assign(checks, wizardUi);
 await second.evaluate(`(() => {
   document.querySelectorAll('.db-nav-item')[2]?.click();
 })()`);
@@ -439,6 +527,8 @@ const expected = {
   gatewayModelSelectorMounted: true,
   wizardPreventsFalseCompletion: true,
   wizardScrollEnabled: true,
+  wizardUiComplete: true,
+  wizardUiPersisted: true,
   controlledAuth: true,
   multipleModels: true,
   invalidCredentialRejected: true,

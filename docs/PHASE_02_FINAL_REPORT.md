@@ -26,9 +26,11 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
   por meio de inferência nativa do gateway sob política do projeto. O painel
   direto de conversa não edita arquivos; o runtime separado do DevBrain Agent
   usa ferramentas submetidas ao Core e foi validado com provedor controlado.
-- Teste Electron isolado usa um provedor HTTP controlado para verificar cofre,
-  autenticação, descoberta, credencial inválida, persistência após reinício,
-  seleção do modelo no Workspace e rolagem do compositor. Não acessa dados
+- Teste Electron isolado usa um provedor HTTP controlado e percorre o
+  assistente pela interface: reutiliza a chave cifrada, autentica, descobre
+  modelos gratuitos e pagos, escolhe um modelo com ferramentas, salva rota e
+  política e confirma a persistência. Também cobre credencial inválida,
+  retomada após reinício, seleção no Workspace e rolagem. Não acessa dados
   reais nem APIs pagas.
 
 ## Entregas integradas
@@ -158,6 +160,13 @@ repositório Git temporário):
 Testes de protocolo cobrem serialização e parsing por protocolo, com e sem streaming, e a
 ponte HTTP de ferramentas.
 
+O smoke de recuperação após queda aguarda a gravação inicial do `Local State`
+do Electron antes de encerrar o processo à força. Uma queda imediata no
+primeiro arranque, antes de o Electron persistir sua chave do `safeStorage`,
+pode tornar a credencial recém-gravada indecifrável; nesse caso o gateway
+retorna `CREDENTIAL_UNAVAILABLE` e solicita substituição no cofre. Essa
+limitação foi observada apenas no perfil descartável do teste.
+
 **Com modelos reais: nada validado neste perfil descartável.** Conexões externas
 autenticadas no teste: **0**. Inferências externas: **0**. Modelos locais neste host:
 **0** (sem Ollama, LM Studio ou llama.cpp). Nenhuma API
@@ -190,8 +199,8 @@ nenhuma chamada fora das rotas da estratégia em `ai.usage.list`.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital, reconstruído na
 consolidação: `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.765.735 bytes; SHA-256
-`2C19DF345EBCDE98DDA57D70D44CD56DE112853F7F79239F8FF6274056D0AFBA`).
+(120.765.751 bytes; SHA-256
+`9FDD721A034838A8D1F9EC19EC444B1641D80A1146B51DC4A64BB366B6D779F9`).
 O executável empacotado passou no smoke Electron em perfil descartável.
 
 Validado com diretório de instalação e `--user-data-dir` descartáveis: instalação silenciosa

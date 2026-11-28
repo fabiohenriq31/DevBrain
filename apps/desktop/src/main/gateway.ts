@@ -11,7 +11,15 @@ export const createGatewayForCore = (core: CoreServices): AiGateway => {
       .some((connection) => connection.credentialId === id && connection.providerId === providerId);
     if (!ref || (ref.providerId && ref.providerId !== providerId) || !bound)
       throw new DevBrainError('PERMISSION_DENIED', 'Credential is not bound to this provider');
-    return core.credentials.resolve(id, { providerId, reason: 'ai.inference' });
+    try {
+      return await core.credentials.resolve(id, { providerId, reason: 'ai.inference' });
+    } catch (error) {
+      if (DevBrainError.is(error)) throw error;
+      throw new DevBrainError(
+        'CREDENTIAL_UNAVAILABLE',
+        'Stored credential could not be decrypted; replace it in the vault',
+      );
+    }
   });
   return gateway;
 };

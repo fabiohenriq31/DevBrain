@@ -145,7 +145,7 @@ Base: `origin/phase-02/contracts` (`4ada206`, descendente da consolidação da F
 | Estrutura integrada da Central de IA (11 áreas sem inflar a barra lateral principal; atalhos rápidos na paleta `Ctrl+K`) | ✅ | `views/ai-center/AiResourceCenterView.tsx`, `App.tsx`, `smoke-desktop.mjs` (`uiAiCenterMounted`) |
 | Dashboard executivo de recursos (provedores descobertos/conectados/operacionais, modelos, runtimes locais, cotas Nominal/Disponível/Reservada/Estimada/Consumida/Desconhecida, consumo por moeda sem misturar unidades nem saldo global falso de tokens, créditos a expirar, falhas e fallbacks) | ✅ | `views/ai-center/OverviewSection.tsx`, `lib/ai-center.ts`, `ai-center.test.ts` |
 | Marketplace de provedores pesquisável com 12 filtros, visão detalhada por provedor, zero selos de gratuidade sem evidência e ofertas desconhecidas marcadas como desconhecidas | ✅ | `views/ai-center/MarketplaceWizardSection.tsx`, `ai-center.test.ts` (escala 300+ itens) |
-| Cadastro assistido em 11 etapas + fila retomável de oportunidades gratuitas (DPAPI/`safeStorage` via `credentials.store`, segredos nunca reexibidos nem salvos em `localStorage`, consentimento explícito antes de teste de inferência) | ✅ | `views/ai-center/MarketplaceWizardSection.tsx`, `lib/preferences.ts`, `ai-center.test.ts` |
+| Cadastro assistido simplificado em 7 etapas visíveis + fila retomável, com persistência verificada, DPAPI/`safeStorage`, segredos nunca reexibidos nem salvos em `localStorage` e consentimento antes do teste de inferência | ✅ | `views/ai-center/MarketplaceWizardSection.tsx`, smoke Electron, `ai-center.test.ts` |
 | Minhas conexões (ativar/desativar, endpoints autorizados, rotação de credenciais, distinção explícita entre chave autenticada `provider-api` e inferência comprovada `successful-inference`, revogação) | ✅ | `views/ai-center/ConnectionsModelsSection.tsx`, `ai-center.test.ts` |
 | Catálogo de modelos de alta densidade (agrupamento multi-provedor do mesmo modelo preservando diferenças de preço/limites/privacidade por endpoint, comparação lado a lado e atribuição direta a agentes) | ✅ | `views/ai-center/ConnectionsModelsSection.tsx`, `groupModelsAcrossProviders` em `ai-center.test.ts` |
 | Agentes de desenvolvimento (Claude Code, OpenAI Codex, Google Antigravity + **OpenCode** `opencode-cli`; tabela de 6 eixos distinguindo Modelo · Provedor · Agente · Runtime · Conexão · Política) e seletor de modelo integrado ao Workspace | ✅ | `views/AgentsProvidersView.tsx`, `views/WorkspaceView.tsx`, `ai-center.test.ts` |
@@ -163,7 +163,10 @@ reutilização segura de credenciais existentes, retomada do assistente pela
 persistência real, rota e política por projeto, seletor direto de modelos no
 Workspace. `pnpm validate` passou com 218 testes após integrar a ponte do
 agente nativo; o executável empacotado passou no smoke Electron com provedor
-controlado, e 34 verificações de rolagem real passaram. Inferência externa com as
+controlado, e 34 verificações de rolagem real passaram. O smoke percorreu o
+assistente no Electron até a conclusão persistida com
+credencial cifrada reutilizada e modelo gratuito com ferramentas em servidor
+controlado. Inferência externa com as
 credenciais do proprietário permanece para validação manual; nenhuma foi lida
 ou utilizada durante o desenvolvimento.
 
