@@ -90,6 +90,12 @@ const launch = async () => {
       pending.delete(data.id);
     }
   };
+  const cdp = (method, params = {}) =>
+    new Promise((resolve) => {
+      const id = nextId++;
+      pending.set(id, resolve);
+      ws.send(JSON.stringify({ id, method, params }));
+    });
   const evaluate = (expression) =>
     new Promise((resolve) => {
       const id = nextId++;
@@ -108,7 +114,7 @@ const launch = async () => {
     if ((await evaluate('typeof window.devbrain')) === 'object') break;
     await sleep(250);
   }
-  return { evaluate, ws };
+  return { cdp, evaluate, ws };
 };
 
 const SECRET = `smoke-secret-${crypto.randomUUID()}`;
@@ -250,6 +256,40 @@ const after = await second.evaluate(
 })()`.replaceAll('__SID__', checks?.sessionId ?? ''),
 );
 Object.assign(checks, after);
+await second.cdp('Emulation.setDeviceMetricsOverride', {
+  width: 900,
+  height: 460,
+  deviceScaleFactor: 1,
+  mobile: false,
+});
+await sleep(200);
+const scrollTarget = await second.evaluate(`(() => {
+  const el = document.querySelector('[data-scroll-region="ai-center-overview"]');
+  if (!el) return null;
+  el.scrollTop = 0;
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2, sh: el.scrollHeight, ch: el.clientHeight };
+})()`);
+if (scrollTarget && scrollTarget.sh > scrollTarget.ch) {
+  await second.cdp('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: Math.round(scrollTarget.x),
+    y: Math.round(scrollTarget.y),
+  });
+  await second.cdp('Input.dispatchMouseEvent', {
+    type: 'mouseWheel',
+    x: Math.round(scrollTarget.x),
+    y: Math.round(scrollTarget.y),
+    deltaX: 0,
+    deltaY: 420,
+  });
+  await sleep(180);
+}
+checks.uiRealWheelScrollOk = Boolean(
+  await second.evaluate(
+    `(document.querySelector('[data-scroll-region="ai-center-overview"]')?.scrollTop ?? 0) > 0`,
+  ),
+);
 delete checks.sessionId;
 const ws = second.ws;
 
@@ -299,6 +339,7 @@ const expected = {
   uiTerminalMounted: true,
   aiChannelContractValid: true,
   uiAiCenterMounted: true,
+  uiRealWheelScrollOk: true,
 };
 const failures = Object.entries(expected).filter(([k, v]) => checks?.[k] !== v);
 if (failures.length) {

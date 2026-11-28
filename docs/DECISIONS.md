@@ -503,3 +503,52 @@ afirmação de modo gratuito, local ou restrito é feita para ele.
 **Consequências.** Existe um agente funcional sob controle do Core e do gateway, testado de
 ponta a ponta com modelo roteirizado. A qualidade real depende do modelo configurado. Ainda
 não há orquestração multiagente nem retomada de turno parcial.
+
+## ADR-0030 — Arquitetura de contenção de altura/largura e responsabilidades explícitas de rolagem no desktop
+
+**Status:** aceita (Fase 02, consolidação)
+
+**Contexto.** No instalador `0.2.0`, a rolagem falhava globalmente nas telas do aplicativo.
+A reprodução instrumentada no Electron identificou quatro causas arquiteturais combinadas:
+
+1. Os wrappers internos das divisões de `SplitPane` (`packages/ui/src/layout.ts`) eram
+   `display: block` com `height: auto`, enquanto `SplitPane` usava apenas `flex: 1` sem
+   `height: 100%`. Quando um `SplitPane` (ou qualquer view baseada em `flex: 1`) ficava
+   aninhado dentro de outro `SplitPane` (`App.tsx`, `WorkspaceView.tsx`,
+   `MarketplaceWizardSection.tsx`), a cadeia flex era interrompida: os containers internos
+   expandiam para a altura integral do conteúdo (ex.: `1240 px` em janela de `500 px`, onde
+   `clientHeight === scrollHeight`), impedindo qualquer `scrollTop > 0`, enquanto o
+   `SplitPane` externo cortava o excedente com `overflow: hidden`.
+2. Containers intermediários de host (`App.tsx` `<main> > div`, `AiResourceCenterView` nas
+   abas `marketplace` e `agents`, `WorkspaceView` no painel inferior) usavam `display: block`
+   em vez de `display: flex; flex-direction: column; min-width: 0; min-height: 0`.
+3. `MarketplaceWizardSection` possuía `minHeight: 500` fixo no container raiz e `ProjectsView`
+   usava `gridTemplateColumns: '320px 1fr'` sem `minmax(0, 1fr)`, permitindo transbordo em
+   janelas compactas.
+4. Pela especificação CSS Flexbox §4.5, itens flex com `overflow: auto` (como `DataTable`)
+   possuem `min-height` automático igual a `0`, podendo ser esmagados verticalmente dentro de
+   colunas roláveis sem `flex-shrink: 0`; além disso, `@xterm/xterm` 6.0 substituiu a rolagem
+   nativa de `.xterm-viewport` por `.xterm-scrollable-element`.
+
+**Decisão.**
+
+- **Casca estrutural sem `overflow: auto` global:** `html`, `body`, `#root`, o shell de 3
+  painéis e `SplitPane` permanecem estritamente contidos (`overflow: hidden`), mas todo
+  wrapper de `SplitPane` e todo host intermediário de view passam a ser
+  `display: flex; flex-direction: column; flex: 1 1 0%; min-width: 0; min-height: 0; overflow: hidden`
+  (com `max-width`/`max-height` protetivos no painel fixo para janelas reduzidas).
+- **Regiões explícitas de rolagem (`data-scroll-region`):** cada painel folha (menu lateral,
+  inspetor contextual, abas da Central de IA, lista/detalhe do Marketplace, lista/detalhe de
+  Projetos, compositor e abas inferiores do Workspace, Segurança, Configurações e corpo de
+  `Dialog`) assume responsabilidade independente de rolagem (`overflow-y: auto`,
+  `overflow-x: auto` quando aplicável), preservando cabeçalhos e barras de ferramentas fixos
+  (`flex-shrink: 0`).
+- **Tabelas, cartões e terminal:** `DataTable`, `.db-card`, `Banner`, `EmptyState` e
+  `UntrustedBlock` declaram `flex-shrink: 0; min-width: 0` (evitando colapso vertical e
+  habilitando rolagem horizontal própria); `Tabs` permite rolagem horizontal por roda/touchpad;
+  `TerminalPane` estiliza `.xterm-scrollable-element > .scrollbar > .slider` e sincroniza
+  `viewportY`/`baseY`.
+- **Verificação E2E real obrigatória:** `scripts/smoke-desktop.mjs` e
+  `apps/desktop/src/renderer/scroll-e2e.mjs` (`pnpm --filter @devbrain/desktop verify:scroll`)
+  disparam eventos reais `Input.dispatchMouseEvent({ type: 'mouseWheel' })` no Electron e
+  validam variações reais de `scrollTop` e `scrollLeft` em todas as áreas.
