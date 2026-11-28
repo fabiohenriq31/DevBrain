@@ -159,7 +159,7 @@ describe('migrations', () => {
     const driver = openDatabase({ location: ':memory:' });
     expect(migrate(driver)).toEqual(MIGRATIONS.map((m) => m.id));
     expect(migrate(driver)).toEqual([]);
-    expect(currentSchemaVersion(driver)).toBe(2);
+    expect(currentSchemaVersion(driver)).toBe(5);
     driver.close();
   });
 
@@ -231,7 +231,7 @@ describe('migrations', () => {
       { id: xid, sid, now, req: JSON.stringify(request(sid, { id: xid })) },
     );
 
-    expect(migrate(driver)).toEqual([2]);
+    expect(migrate(driver)).toEqual([2, 3, 4, 5]);
     const upgraded = {
       projects: new ProjectRepository(driver),
       sessions: new SessionRepository(driver),

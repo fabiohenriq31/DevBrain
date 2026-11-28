@@ -1,5 +1,12 @@
-import { useMemo, useState } from 'react';
-import type { Agent, ApplicationSettings, Project, UsageSummary } from '@devbrain/contracts';
+import { useEffect, useMemo, useState } from 'react';
+import type {
+  Agent,
+  ApplicationSettings,
+  BudgetStatus,
+  Project,
+  QuotaForecast,
+  UsageSummary,
+} from '@devbrain/contracts';
 import {
   Badge,
   Banner,
@@ -725,6 +732,7 @@ export interface QuotasAndCreditsSectionProps {
   projects: readonly Project[];
   agents: readonly Agent[];
   settings: ApplicationSettings | null;
+  activeProjectId: string | null;
   coreUsageDay: UsageSummary | null;
   coreUsageMonth: UsageSummary | null;
   onQueryAccountCredit: (accountId: string) => Promise<void>;
@@ -737,6 +745,7 @@ export const QuotasAndCreditsSection = ({
   projects,
   agents,
   settings,
+  activeProjectId,
   coreUsageDay,
   coreUsageMonth,
   onQueryAccountCredit,
@@ -749,6 +758,37 @@ export const QuotasAndCreditsSection = ({
   const [filterAgentId, setFilterAgentId] = useState<string>('all');
   const [filterModelId, setFilterModelId] = useState<string>('all');
   const [accountLookup, setAccountLookup] = useState('');
+  const [budgetStatuses, setBudgetStatuses] = useState<BudgetStatus[]>([]);
+  const [forecasts, setForecasts] = useState<Record<string, QuotaForecast>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    if (mode === 'credits') {
+      void callAiChannel('ai.budget.status', {
+        ...(activeProjectId ? { projectId: activeProjectId } : {}),
+      }).then((out) => {
+        if (!cancelled) setBudgetStatuses(out.status === 'ok' ? out.data : []);
+      });
+    } else {
+      void Promise.all(
+        snapshot.quotas.slice(0, 30).map(async (quota) => {
+          const out = await callAiChannel('ai.quota.forecast', { quotaId: quota.id });
+          return [quota.id, out.status === 'ok' ? out.data : null] as const;
+        }),
+      ).then((entries) => {
+        if (!cancelled)
+          setForecasts(
+            Object.fromEntries(entries.filter((entry) => entry[1] !== null)) as Record<
+              string,
+              QuotaForecast
+            >,
+          );
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, mode, snapshot.quotas]);
 
   const allBreakdowns = useMemo(
     () =>
@@ -927,6 +967,27 @@ export const QuotasAndCreditsSection = ({
                   : 'No monetary charges recorded'}
             </span>
           </div>
+          {budgetStatuses.map((status) => (
+            <div key={`${status.scope}:${status.scopeId}`}>
+              <span className="db-muted">
+                {status.scope} ({status.scopeId}):{' '}
+              </span>
+              <span className="db-mono">
+                {status.currency} {(status.committedMicros / 1_000_000).toFixed(4)} +{' '}
+                {(status.reservedMicros / 1_000_000).toFixed(4)} {pt ? 'reservado' : 'reserved'} /{' '}
+                {status.limitMicros === null
+                  ? pt
+                    ? 'teto não definido'
+                    : 'no ceiling'
+                  : (status.limitMicros / 1_000_000).toFixed(4)}
+              </span>
+              {status.unknownCostRequests > 0 ? (
+                <Badge tone="warning">
+                  {status.unknownCostRequests} {pt ? 'custos desconhecidos' : 'unknown costs'}
+                </Badge>
+              ) : null}
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -1089,6 +1150,15 @@ export const QuotasAndCreditsSection = ({
                 <div>
                   {pt ? 'Observado' : 'Observed'}: {formatTimestamp(q.observedAt, language)}
                 </div>
+                {forecasts[q.quotaId] ? (
+                  <div>
+                    {pt ? 'Previsão' : 'Forecast'}:{' '}
+                    {forecasts[q.quotaId]?.remaining ?? (pt ? 'desconhecida' : 'unknown')};{' '}
+                    {pt ? 'renovação' : 'reset'}{' '}
+                    {formatTimestamp(forecasts[q.quotaId]?.resetAt ?? null, language)} (
+                    {forecasts[q.quotaId]?.resetBasis})
+                  </div>
+                ) : null}
               </div>
             ),
           },

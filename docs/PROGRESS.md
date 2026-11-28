@@ -116,6 +116,26 @@ preservação dos dados.
 
 ## Fase 02
 
+### Ponte de ferramentas e agente nativo: `phase-02/agent-bridge` → `phase-02/consolidation` (2026-11-27)
+
+- Contratos 0.8.0: ferramentas, chamadas, resultados, escolha, chamadas paralelas e fragmentos em streaming.
+- Gateway transporta ferramentas em Chat Completions, Anthropic Messages, Gemini e Ollama; o servidor local deixou de responder `501` para ferramentas.
+- Agente nativo `devbrain-agent` com ferramentas autorizadas pelo Core, limites rígidos, detecção de repetição, efeitos desconhecidos não repetidos e checkpoints com registro de chamadas.
+- Workspace: estratégia de roteamento, modelo ou roteamento automático, comandos pré-autorizados e estados das chamadas.
+- Cenário ponta a ponta com Core e gateway reais e modelo roteirizado: correção de bug com teste autorizado, negações, fallback, política gratuita, projeto restrito, cancelamento com recuperação e limites.
+- Instalador 0.2.0 reconstruído; instalação limpa da 0.1.0, atualização para 0.2.0 com migração dos dados, smoke empacotado e desinstalação validados em diretórios descartáveis.
+- Sem modelos reais: nenhuma credencial nem runtime local disponível neste host.
+
+### Consolidação: `phase-02/consolidation` (2026-11-27)
+
+- Merge da inteligência Claude sobre `develop` com a UI Antigravity e o gateway Codex, preservando o histórico.
+- `pnpm validate` aprovado com 196 testes após a migration 005, observações de cota e descoberta local compatível.
+- 22 receitas específicas documentadas disponíveis no catálogo inicial; ainda não equivalem a conexões autenticadas.
+- Privacidade de projeto lida e gravada no main; inferência de sessão exige `projectId` correspondente.
+- Execução CLI restrita por política; benchmarks com JavaScript não confiável desativados até existir sandbox sem rede.
+- Instalador NSIS x64 versão 0.2.0 gerado. Aceite externo e ponte OpenCode ao gateway permanecem pendentes.
+- Estado completo, evidências e pendências em `docs/PHASE_02_FINAL_REPORT.md`.
+
 ### Antigravity: `phase-02/antigravity-ai-center` (2026-11-27)
 
 Base: `origin/phase-02/contracts` (`4ada206`, descendente da consolidação da Fase 01 `61ae38f`, contratos `0.6.0`).
@@ -125,7 +145,7 @@ Base: `origin/phase-02/contracts` (`4ada206`, descendente da consolidação da F
 | Estrutura integrada da Central de IA (11 áreas sem inflar a barra lateral principal; atalhos rápidos na paleta `Ctrl+K`) | ✅ | `views/ai-center/AiResourceCenterView.tsx`, `App.tsx`, `smoke-desktop.mjs` (`uiAiCenterMounted`) |
 | Dashboard executivo de recursos (provedores descobertos/conectados/operacionais, modelos, runtimes locais, cotas Nominal/Disponível/Reservada/Estimada/Consumida/Desconhecida, consumo por moeda sem misturar unidades nem saldo global falso de tokens, créditos a expirar, falhas e fallbacks) | ✅ | `views/ai-center/OverviewSection.tsx`, `lib/ai-center.ts`, `ai-center.test.ts` |
 | Marketplace de provedores pesquisável com 12 filtros, visão detalhada por provedor, zero selos de gratuidade sem evidência e ofertas desconhecidas marcadas como desconhecidas | ✅ | `views/ai-center/MarketplaceWizardSection.tsx`, `ai-center.test.ts` (escala 300+ itens) |
-| Cadastro assistido em 11 etapas + fila retomável de oportunidades gratuitas (DPAPI/`safeStorage` via `credentials.store`, segredos nunca reexibidos nem salvos em `localStorage`, consentimento explícito antes de teste de inferência) | ✅ | `views/ai-center/MarketplaceWizardSection.tsx`, `lib/preferences.ts`, `ai-center.test.ts` |
+| Cadastro assistido simplificado em 7 etapas visíveis + fila retomável, com persistência verificada, DPAPI/`safeStorage`, segredos nunca reexibidos nem salvos em `localStorage` e consentimento antes do teste de inferência | ✅ | `views/ai-center/MarketplaceWizardSection.tsx`, smoke Electron, `ai-center.test.ts` |
 | Minhas conexões (ativar/desativar, endpoints autorizados, rotação de credenciais, distinção explícita entre chave autenticada `provider-api` e inferência comprovada `successful-inference`, revogação) | ✅ | `views/ai-center/ConnectionsModelsSection.tsx`, `ai-center.test.ts` |
 | Catálogo de modelos de alta densidade (agrupamento multi-provedor do mesmo modelo preservando diferenças de preço/limites/privacidade por endpoint, comparação lado a lado e atribuição direta a agentes) | ✅ | `views/ai-center/ConnectionsModelsSection.tsx`, `groupModelsAcrossProviders` em `ai-center.test.ts` |
 | Agentes de desenvolvimento (Claude Code, OpenAI Codex, Google Antigravity + **OpenCode** `opencode-cli`; tabela de 6 eixos distinguindo Modelo · Provedor · Agente · Runtime · Conexão · Política) e seletor de modelo integrado ao Workspace | ✅ | `views/AgentsProvidersView.tsx`, `views/WorkspaceView.tsx`, `ai-center.test.ts` |
@@ -134,3 +154,45 @@ Base: `origin/phase-02/contracts` (`4ada206`, descendente da consolidação da F
 | Estratégias de roteamento (6 modos) e Classificação de Privacidade por Projeto (*Público*, *Pessoal privado*, *Comercial confidencial*, *Restrito*) com guardrails não contornáveis e bloqueio no Workspace para projetos *Restrito* | ✅ | `views/ai-center/RoutingBenchmarksDiagnosticsSection.tsx`, `views/ProjectsView.tsx`, `views/WorkspaceView.tsx`, `ai-center.test.ts` |
 | Laboratório de Benchmarks e Diagnóstico/Matriz IPC (zero notas fictícias, sem execução automática em APIs pagas, console controlado de streaming `ai.inference.*` e importação auditada `ai.catalog.import`) | ✅ | `views/ai-center/RoutingBenchmarksDiagnosticsSection.tsx`, `ai-center.test.ts` |
 | Ligação em tempo de execução dos handlers `ai.*` no processo `main` (`apps/desktop/src/main/ipc.ts`) | 🟡 | Em `phase-02/contracts` puro, `dispatchIpc` responde honestamente `UNSUPPORTED` (exibido na Matriz IPC de Diagnóstico); ativa automaticamente na consolidação com `phase-02/codex-ai-gateway` e o bloco Core/Catálogo de Claude |
+
+### Codex: `phase-02/codex-ai-gateway` (2026-11-27)
+
+Correção de consolidação em `phase-02/consolidation` (2026-11-28):
+descoberta autenticada de modelos antes de rota (`ai.connections.discover`),
+reutilização segura de credenciais existentes, retomada do assistente pela
+persistência real, rota e política por projeto, seletor direto de modelos no
+Workspace. `pnpm validate` passou com 218 testes após integrar a ponte do
+agente nativo; o executável empacotado passou no smoke Electron com provedor
+controlado, e 34 verificações de rolagem real passaram. O smoke percorreu o
+assistente no Electron até a conclusão persistida com
+credencial cifrada reutilizada e modelo gratuito com ferramentas em servidor
+controlado. Inferência externa com as
+credenciais do proprietário permanece para validação manual; nenhuma foi lida
+ou utilizada durante o desenvolvimento.
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Contratos 0.5.0 da Fase 02 | ✅ | `phase-02/contracts`, PR #5, validação completa da base inicial |
+| Transportes e gateway interno | 🟡 | Seis protocolos; testes de HTTP 200 com erro, stream, cancelamento, fallback, validação de modelo sem inferência e recuperação de política; sem inferência externa autenticada |
+| Ledger SQLite e recuperação | 🟡 | Migration 003 e testes de concorrência, janela, consumo incerto; escopos avançados e créditos ainda pendentes |
+| Catálogo de descoberta | 🟡 | 327 candidatos Models.dev com proveniência; nenhuma conexão habilitada automaticamente; validação individual pendente |
+| OpenCode | 🟡 | Adaptador CLI no motor da Fase 01 e servidor loopback autenticado opcional; CLI ausente no ambiente; integração de ciclo de vida entre ambos pendente |
+| Runtime local | 🟡 | Ollama: inspeção, modelos, download e remoção; teste com servidor local controlado; runtime real ausente |
+| Interface e políticas avançadas | ⏸️ | Consumidores Claude e Antigravity, sem alegação de implementação nesta branch |
+
+### Claude: `phase-02/claude-intelligence` (2026-11-27)
+
+| Item | Status | Evidência |
+| --- | --- | --- |
+| Contratos 0.7.0 (aditivos) | ✅ | `entities/task.ts`, `entities/intelligence.ts`, 13 canais; `compat.test.ts` |
+| Roteamento em 2 estágios, presets, explicação | ✅ | `intelligence.test.ts` (ai-gateway): pontuação não readmite rota excluída, sem modelos externos, qualidade mínima |
+| Orçamento em micros com reserva atômica | ✅ | Testes de concorrência, teto estrito, custo desconhecido, pago não autorizado, gratuito → pago bloqueado |
+| Cotas: prioridade, ritmo, previsão, cooldown por provedor | ✅ | Testes unitários + 429 em uma chave esfria o provedor |
+| Privacidade por projeto no main | ✅ | Projeto restrito usa só local; padrão `personal-private`; fallback mantém a classe |
+| Aplicação no gateway antes de cada tentativa | ✅ | Reavaliação por tentativa; decisão persistida (`ai_routing_decisions`) |
+| Otimizador de contexto | ✅ | `scripts/measure-context.mjs` (fixtures sintéticas, ver PHASE_02) |
+| Handoff estruturado | ✅ | Efeito não confirmado → `reconciliationRequired` |
+| Benchmark | 🟡 | Suíte e avaliadores testados; sem resultado de modelo (sem runtime local, sem API paga) |
+| Endurecimento do gateway | ✅ | `Host`/`Origin` no loopback, IPv6 6to4/Teredo |
+| UI consumindo as decisões do main | ⏸️ | Antigravity (ver INTEGRATION) |
+| `pnpm validate` | ✅ | 180 testes, build desktop, smoke `ok:v4` |

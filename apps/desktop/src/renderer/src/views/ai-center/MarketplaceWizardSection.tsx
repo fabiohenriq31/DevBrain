@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type {
   CredentialReference,
+  DiscoveredProviderModel,
   ProviderCatalogEntry,
   ProviderEndpoint,
 } from '@devbrain/contracts';
@@ -30,9 +31,11 @@ import {
 } from 'lucide-react';
 import {
   PRIVACY_CLASSIFICATIONS,
+  buildPresetStrategy,
   callAiChannel,
   evaluateProviderEligibility,
   formatPricePerMillion,
+  toContractPolicies,
   type AiResourceSnapshot,
   type ProjectPrivacyClass,
 } from '../../lib/ai-center';
@@ -42,6 +45,7 @@ import type { AssistedSignupQueueItem } from '../../lib/preferences';
 
 export interface MarketplaceWizardSectionProps {
   snapshot: AiResourceSnapshot;
+  activeProjectId: string | null;
   credentials: readonly CredentialReference[];
   projectPrivacy: ProjectPrivacyClass;
   approvedProviderIds: readonly string[];
@@ -58,14 +62,34 @@ const DEFAULT_ENDPOINTS_BY_PROVIDER: Readonly<
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1', protocol: 'openai-chat' },
   groq: { baseUrl: 'https://api.groq.com/openai/v1', protocol: 'openai-chat' },
   mistral: { baseUrl: 'https://api.mistral.ai/v1', protocol: 'openai-chat' },
+  nvidia: { baseUrl: 'https://integrate.api.nvidia.com/v1', protocol: 'openai-chat' },
+  cohere: { baseUrl: 'https://api.cohere.ai/compatibility/v1', protocol: 'openai-chat' },
+  cerebras: { baseUrl: 'https://api.cerebras.ai/v1', protocol: 'openai-chat' },
+  huggingface: { baseUrl: 'https://router.huggingface.co/v1', protocol: 'openai-chat' },
+  vercel: { baseUrl: 'https://ai-gateway.vercel.sh/v1', protocol: 'openai-chat' },
+  togetherai: { baseUrl: 'https://api.together.xyz/v1', protocol: 'openai-chat' },
+  'fireworks-ai': { baseUrl: 'https://api.fireworks.ai/inference/v1', protocol: 'openai-chat' },
+  deepinfra: { baseUrl: 'https://api.deepinfra.com/v1/openai', protocol: 'openai-chat' },
+  'siliconflow-cn': { baseUrl: 'https://api.siliconflow.cn/v1', protocol: 'openai-chat' },
+  'alibaba-cn': {
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    protocol: 'openai-chat',
+  },
+  zai: { baseUrl: 'https://api.z.ai/api/paas/v4', protocol: 'openai-chat' },
   deepseek: { baseUrl: 'https://api.deepseek.com/v1', protocol: 'openai-chat' },
   anthropic: { baseUrl: 'https://api.anthropic.com', protocol: 'anthropic-messages' },
-  google: { baseUrl: 'https://generativelanguage.googleapis.com', protocol: 'google-gemini' },
+  google: {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    protocol: 'google-gemini',
+  },
   ollama: { baseUrl: 'http://127.0.0.1:11434', protocol: 'ollama' },
+  lmstudio: { baseUrl: 'http://127.0.0.1:1234/v1', protocol: 'openai-chat' },
+  'llama-cpp': { baseUrl: 'http://127.0.0.1:9931/v1', protocol: 'openai-chat' },
 };
 
 export const MarketplaceWizardSection = ({
   snapshot,
+  activeProjectId,
   credentials,
   projectPrivacy,
   approvedProviderIds,
@@ -123,10 +147,17 @@ export const MarketplaceWizardSection = ({
   const [wizardModelUpstreamId, setWizardModelUpstreamId] = useState<string>('');
   const [wizardSavedModelId, setWizardSavedModelId] = useState<string>('');
   const [wizardValidationSummary, setWizardValidationSummary] = useState<string | null>(null);
+  const [wizardDiscoveredModels, setWizardDiscoveredModels] = useState<DiscoveredProviderModel[]>(
+    [],
+  );
   const [wizardAuthorizeInferenceTest, setWizardAuthorizeInferenceTest] = useState<boolean>(false);
   const [wizardInferenceTestSummary, setWizardInferenceTestSummary] = useState<string | null>(null);
   const [wizardRoutePriority, setWizardRoutePriority] = useState<string>('10');
   const [wizardLocalOnly, setWizardLocalOnly] = useState<boolean>(false);
+  const [wizardPrivacy, setWizardPrivacy] = useState<ProjectPrivacyClass>(projectPrivacy);
+  const [wizardAllowPaid, setWizardAllowPaid] = useState(false);
+  const [wizardApproveProvider, setWizardApproveProvider] = useState(false);
+  const [wizardDailyBudget, setWizardDailyBudget] = useState('');
   const [wizardBusy, setWizardBusy] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
 
@@ -264,6 +295,18 @@ export const MarketplaceWizardSection = ({
       null,
     [enrichedCatalog, filteredCatalog, selectedProviderId],
   );
+  const persistedCompleted = (providerId: string) =>
+    snapshot.connections.some(
+      (connection) =>
+        connection.providerId === providerId &&
+        connection.status === 'ready' &&
+        snapshot.routes.some(
+          (route) =>
+            route.connectionId === connection.id &&
+            route.enabled &&
+            snapshot.models.some((model) => model.id === route.modelId),
+        ),
+    );
 
   const enqueueProvider = (entry: ProviderCatalogEntry) => {
     if (signupQueue.some((q) => q.providerId === entry.id)) return;
@@ -279,12 +322,23 @@ export const MarketplaceWizardSection = ({
     ]);
   };
 
-  const openWizardFor = (entry?: ProviderCatalogEntry, resumeStep = 1) => {
+  const openWizardFor = (entry?: ProviderCatalogEntry, _resumeStep = 1) => {
     const pid = entry?.id ?? 'openrouter';
     const pname = entry?.name ?? 'OpenRouter';
     const presetEp = DEFAULT_ENDPOINTS_BY_PROVIDER[pid];
     const existingEp = snapshot.endpoints.find((e) => e.providerId === pid);
     const existingConn = snapshot.connections.find((c) => c.providerId === pid);
+    const existingModel = snapshot.models.find((m) => m.providerId === pid);
+    const existingRoute = snapshot.routes.find(
+      (route) => route.connectionId === existingConn?.id && route.modelId === existingModel?.id,
+    );
+    const matchingCredentials = credentials.filter((credential) =>
+      credential.label.toLowerCase().includes(pname.toLowerCase()),
+    );
+    const recoveredCredentialId =
+      existingConn?.credentialId ??
+      (matchingCredentials.length === 1 ? matchingCredentials[0]?.id : null) ??
+      '';
     setWizardProviderId(pid);
     setWizardProviderName(pname);
     setWizardSignupUrl(entry?.signupUrl ?? '');
@@ -294,15 +348,24 @@ export const MarketplaceWizardSection = ({
     setWizardCredLabel(`${pname} API Key`);
     setWizardSecretValue('');
     setWizardEnvVar('');
-    setWizardStoredCredId(existingConn?.credentialId ?? '');
+    setWizardStoredCredId(recoveredCredentialId);
+    setWizardExistingCredId(recoveredCredentialId);
+    setWizardCredMode(recoveredCredentialId ? 'existing' : 'os-encrypted');
     setWizardEndpointId(existingEp?.id ?? `ep-${pid}`);
     setWizardConnectionId(existingConn?.id ?? `conn-${pid}`);
     setWizardValidationSummary(null);
+    setWizardDiscoveredModels([]);
+    setWizardSavedModelId(existingModel?.id ?? '');
+    setWizardModelUpstreamId(existingModel?.upstreamModelId ?? '');
     setWizardInferenceTestSummary(null);
     setWizardAuthorizeInferenceTest(false);
     setWizardLocalOnly(entry?.kind === 'local' || presetEp?.protocol === 'ollama');
+    setWizardPrivacy(projectPrivacy);
+    setWizardAllowPaid(false);
+    setWizardApproveProvider(false);
+    setWizardDailyBudget('');
     setWizardError(null);
-    setWizardStep(resumeStep);
+    setWizardStep(existingRoute ? 9 : existingConn ? 7 : recoveredCredentialId ? 6 : 1);
     setWizardOpen(true);
   };
 
@@ -332,7 +395,10 @@ export const MarketplaceWizardSection = ({
     setWizardError(null);
     setWizardBusy(true);
     try {
+      let storedId = wizardExistingCredId;
       if (wizardCredMode === 'existing') {
+        if (!wizardExistingCredId && wizardProtocol !== 'ollama')
+          throw new Error('Select an existing credential for this provider');
         setWizardStoredCredId(wizardExistingCredId);
       } else if (wizardCredMode === 'os-encrypted') {
         const stored = await invoke('credentials.store', {
@@ -343,6 +409,7 @@ export const MarketplaceWizardSection = ({
         // Immediately wipe secret from React state memory!
         setWizardSecretValue('');
         setWizardStoredCredId(stored.id);
+        storedId = stored.id;
       } else {
         const stored = await invoke('credentials.store', {
           storage: 'environment',
@@ -351,7 +418,11 @@ export const MarketplaceWizardSection = ({
         });
         setWizardEnvVar('');
         setWizardStoredCredId(stored.id);
+        storedId = stored.id;
       }
+      const savedCredentials = await invoke('credentials.list', {});
+      if (storedId && !savedCredentials.some((ref) => ref.id === storedId))
+        throw new Error('Credential was not persisted');
       await onRefreshAll();
       persistQueueProgress(6, 'in-progress');
       setWizardStep(6);
@@ -375,15 +446,7 @@ export const MarketplaceWizardSection = ({
         protocol: wizardProtocol,
         documentationUrl: wizardDocUrl.trim() ? wizardDocUrl.trim() : null,
       });
-      if (epRes.status === 'unsupported') {
-        setWizardError(
-          pt
-            ? 'O canal ai.endpoints.save retornou UNSUPPORTED nesta branch base (aguardando merge com phase-02/codex-ai-gateway). Sua credencial cifrada já está salva com segurança no cofre DPAPI e o progresso desta etapa foi salvo na fila para retomada.'
-            : 'ai.endpoints.save is UNSUPPORTED until gateway branch integration; your encrypted credential is safely stored.',
-        );
-        persistQueueProgress(6, 'in-progress');
-        return;
-      }
+      if (epRes.status === 'unsupported') throw new Error(epRes.message);
       if (epRes.status === 'error') throw new Error(`${epRes.error.code}: ${epRes.error.message}`);
 
       const connRes = await callAiChannel('ai.connections.save', {
@@ -402,6 +465,12 @@ export const MarketplaceWizardSection = ({
             : `${connRes.error.code}: ${connRes.error.message}`,
         );
       }
+      const readBack = await callAiChannel('ai.connections.list', {});
+      if (
+        readBack.status !== 'ok' ||
+        !readBack.data.some((item) => item.id === connId && item.endpointId === epId)
+      )
+        throw new Error('Connection was not persisted');
       await onRefreshAll();
       persistQueueProgress(7, 'in-progress');
       setWizardStep(7);
@@ -416,30 +485,50 @@ export const MarketplaceWizardSection = ({
     setWizardError(null);
     setWizardBusy(true);
     try {
-      const res = await callAiChannel('ai.connections.validate', { id: wizardConnectionId });
-      if (res.status === 'ok') {
+      const res = await callAiChannel('ai.connections.discover', { id: wizardConnectionId });
+      if (res.status === 'ok' && (res.data.authenticated || wizardLocalOnly)) {
+        setWizardDiscoveredModels(res.data.models);
         setWizardValidationSummary(
-          `${pt ? 'Estado observado' : 'Observed state'}: ${res.data.state} (${pt ? 'evidência' : 'evidence'}: ${res.data.evidence})`,
+          `${pt ? 'Credencial aceita' : 'Credential accepted'} · ${res.data.models.length} ${pt ? 'modelos descobertos' : 'models discovered'}`,
         );
+        const free = res.data.models.find(
+          (model) =>
+            model.pricing?.inputPerMillion === 0 &&
+            model.pricing.outputPerMillion === 0 &&
+            model.tools === true,
+        );
+        setWizardModelUpstreamId(
+          free?.upstreamModelId ?? res.data.models[0]?.upstreamModelId ?? '',
+        );
+        const connectionRead = await callAiChannel('ai.connections.list', {});
+        if (
+          connectionRead.status !== 'ok' ||
+          !connectionRead.data.some(
+            (item) => item.id === wizardConnectionId && item.status === 'ready',
+          )
+        )
+          throw new Error('Authentication state was not persisted');
         await onRefreshAll();
         persistQueueProgress(8, 'in-progress');
+        setWizardStep(8);
       } else if (res.status === 'unsupported') {
-        setWizardValidationSummary(
-          pt ? 'Validação automática indisponível (UNSUPPORTED).' : res.message,
-        );
+        setWizardError(res.message);
       } else {
-        setWizardError(`${res.error.code}: ${res.error.message}`);
+        setWizardError(
+          res.status === 'error'
+            ? `${res.error.code}: ${res.error.message}`
+            : 'Authentication not confirmed',
+        );
       }
+    } catch (error) {
+      setWizardError(describeError(error, language).message);
     } finally {
       setWizardBusy(false);
     }
   };
 
   const handleWizardSaveModel = async () => {
-    if (!wizardModelUpstreamId.trim()) {
-      setWizardStep(9);
-      return;
-    }
+    if (!wizardModelUpstreamId.trim()) return;
     setWizardError(null);
     setWizardBusy(true);
     try {
@@ -447,44 +536,109 @@ export const MarketplaceWizardSection = ({
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9._:-]/g, '-')}`.slice(0, 120);
+      const discovered = wizardDiscoveredModels.find(
+        (item) => item.upstreamModelId === wizardModelUpstreamId,
+      );
+      if (!discovered) throw new Error('Choose a model returned by authenticated discovery');
       const res = await callAiChannel('ai.models.save', {
         id: sanitizedId,
         providerId: wizardProviderId,
         upstreamModelId: wizardModelUpstreamId.trim(),
-        name: wizardModelUpstreamId.trim(),
+        name: discovered.name,
         capabilities: {
           input: ['text'],
           output: ['text'],
-          tools: false,
+          tools: discovered.tools === true,
           streaming: true,
           structuredOutput: false,
           reasoning: false,
-          contextTokens: null,
-          outputTokens: null,
+          contextTokens: discovered.contextTokens,
+          outputTokens: discovered.outputTokens,
         },
-        pricing: null,
+        pricing: discovered.pricing,
         lifecycle: 'unknown',
-        sourceId: 'user-configured',
-        verifiedAt: null,
+        sourceId: 'provider-api',
+        verifiedAt: discovered.observedAt,
       });
       if (res.status === 'ok') {
+        const readBack = await callAiChannel('ai.models.list', {});
+        if (
+          readBack.status !== 'ok' ||
+          !readBack.data.some(
+            (item) =>
+              item.id === res.data.id && item.upstreamModelId === discovered.upstreamModelId,
+          )
+        )
+          throw new Error('Model was not persisted');
         setWizardSavedModelId(res.data.id);
         await onRefreshAll();
-        persistQueueProgress(9, 'in-progress');
-        setWizardStep(9);
+        persistQueueProgress(10, 'in-progress');
+        setWizardStep(10);
       } else {
         setWizardError(res.status === 'unsupported' ? res.message : res.error.message);
       }
+    } catch (error) {
+      setWizardError(describeError(error, language).message);
     } finally {
       setWizardBusy(false);
     }
   };
 
+  const saveWizardProjectPolicy = async () => {
+    if (!activeProjectId) throw new Error('Select a project');
+    const current = await callAiChannel('ai.projectPolicy.get', { projectId: activeProjectId });
+    if (current.status !== 'ok') throw new Error('Project policy is unavailable');
+    const dollars = wizardDailyBudget.trim() ? Number(wizardDailyBudget) : null;
+    if (dollars !== null && (!Number.isFinite(dollars) || dollars < 0 || dollars > 100000))
+      throw new Error('Invalid daily budget');
+    const saved = await callAiChannel('ai.projectPolicy.save', {
+      ...current.data,
+      privacyClass: wizardPrivacy,
+      approvedProviderIds: wizardApproveProvider
+        ? [...new Set([...current.data.approvedProviderIds, wizardProviderId])]
+        : current.data.approvedProviderIds,
+      budget: {
+        ...current.data.budget,
+        allowPaid: wizardAllowPaid,
+        maxPerDayMicros:
+          dollars === null ? current.data.budget.maxPerDayMicros : Math.round(dollars * 1_000_000),
+      },
+    });
+    if (saved.status !== 'ok')
+      throw new Error(saved.status === 'error' ? saved.error.message : saved.message);
+    const confirmed = await callAiChannel('ai.projectPolicy.get', { projectId: activeProjectId });
+    if (
+      confirmed.status !== 'ok' ||
+      confirmed.data.privacyClass !== wizardPrivacy ||
+      confirmed.data.budget.allowPaid !== wizardAllowPaid
+    )
+      throw new Error('Project policy was not persisted');
+    const strategy = buildPresetStrategy(wizardAllowPaid ? 'balanced' : 'free-only', {
+      policyId: `policy-project-${activeProjectId}`,
+      allowedProviderIds: [wizardProviderId],
+    });
+    const configured = await callAiChannel(
+      'ai.policies.configure',
+      toContractPolicies({
+        ...strategy,
+        policyId: `policy-project-${activeProjectId}`,
+        allowPaid: wizardAllowPaid,
+        privacyMode: wizardPrivacy === 'restricted' ? 'local-only' : 'approved-providers',
+        allowedProviderIds: [wizardProviderId],
+      }),
+    );
+    if (configured.status !== 'ok')
+      throw new Error(
+        configured.status === 'error' ? configured.error.message : configured.message,
+      );
+  };
+
   const handleWizardAuthorizedTestInference = async () => {
-    if (!wizardAuthorizeInferenceTest) return;
+    if (!wizardAuthorizeInferenceTest || !activeProjectId || !wizardSavedModelId) return;
     setWizardError(null);
     setWizardBusy(true);
     try {
+      await saveWizardProjectPolicy();
       const reqId = `req-test-${Date.now()}`;
       const sub = await callAiChannel('ai.inference.submit', {
         id: reqId,
@@ -494,23 +648,35 @@ export const MarketplaceWizardSection = ({
         maxOutputTokens: 16,
         temperature: 0,
         stream: false,
-        routingPolicyId: 'policy-balanced',
+        routingPolicyId: `policy-project-${activeProjectId}`,
         idempotencyKey: reqId,
+        projectId: activeProjectId,
       });
       if (sub.status !== 'ok') {
         setWizardError(sub.status === 'unsupported' ? sub.message : sub.error.message);
         return;
       }
-      const out = await callAiChannel('ai.inference.result', { requestId: sub.data.requestId });
-      if (out.status === 'ok' && out.data) {
+      let result = null;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const out = await callAiChannel('ai.inference.result', { requestId: sub.data.requestId });
+        if (out.status === 'error') throw new Error(out.error.message);
+        if (out.status === 'ok' && out.data) {
+          result = out.data;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (result) {
         setWizardInferenceTestSummary(
-          `${pt ? 'Inferência concluída' : 'Inference succeeded'} (${out.data.finishReason}): "${out.data.content.slice(0, 80)}"`,
+          `${pt ? 'Inferência concluída' : 'Inference succeeded'} (${result.finishReason}): "${result.content.slice(0, 80)}"`,
         );
       } else {
-        setWizardInferenceTestSummary(
-          pt ? 'Requisição submetida ao gateway.' : 'Inference submitted.',
+        setWizardError(
+          pt ? 'Teste ainda sem resultado confirmado.' : 'Test has no confirmed result yet.',
         );
       }
+    } catch (error) {
+      setWizardError(describeError(error, language).message);
     } finally {
       setWizardBusy(false);
     }
@@ -529,14 +695,84 @@ export const MarketplaceWizardSection = ({
           enabled: true,
           localOnly: wizardLocalOnly,
         });
-        if (routeRes.status === 'error') {
-          setWizardError(routeRes.error.message);
-          return;
-        }
+        if (routeRes.status !== 'ok')
+          throw new Error(routeRes.status === 'error' ? routeRes.error.message : routeRes.message);
       }
+      const routes = await callAiChannel('ai.routes.list', {});
+      if (
+        routes.status !== 'ok' ||
+        !routes.data.some(
+          (route) =>
+            route.connectionId === wizardConnectionId &&
+            route.modelId === wizardSavedModelId &&
+            route.enabled,
+        )
+      )
+        throw new Error('Operational route was not persisted');
       await onRefreshAll();
+      persistQueueProgress(9, 'in-progress');
+      setWizardStep(9);
+    } catch (error) {
+      setWizardError(describeError(error, language).message);
+    } finally {
+      setWizardBusy(false);
+    }
+  };
+
+  const handleWizardComplete = async () => {
+    setWizardError(null);
+    setWizardBusy(true);
+    try {
+      if (!activeProjectId) throw new Error('Select a project before completing setup');
+      const [connections, models, routes] = await Promise.all([
+        callAiChannel('ai.connections.list', {}),
+        callAiChannel('ai.models.list', {}),
+        callAiChannel('ai.routes.list', {}),
+      ]);
+      if (
+        connections.status !== 'ok' ||
+        !connections.data.some((item) => item.id === wizardConnectionId && item.status === 'ready')
+      )
+        throw new Error('Authentication is not confirmed');
+      if (models.status !== 'ok' || !models.data.some((item) => item.id === wizardSavedModelId))
+        throw new Error('No persisted model selected');
+      if (
+        routes.status !== 'ok' ||
+        !routes.data.some(
+          (item) =>
+            item.connectionId === wizardConnectionId &&
+            item.modelId === wizardSavedModelId &&
+            item.enabled,
+        )
+      )
+        throw new Error('No persisted route for this model');
+      await saveWizardProjectPolicy();
+      const check = await callAiChannel('ai.routes.explain', {
+        id: `req-onboard-${Date.now()}`,
+        sessionId: null,
+        modelId: wizardSavedModelId,
+        messages: [{ role: 'user', content: 'Connection readiness check' }],
+        maxOutputTokens: 16,
+        temperature: 0,
+        stream: false,
+        routingPolicyId: `policy-project-${activeProjectId}`,
+        idempotencyKey: null,
+        projectId: activeProjectId,
+      });
+      if (
+        check.status !== 'ok' ||
+        !check.data.ranked.some((route) => route.routeId === `route-${wizardSavedModelId}`)
+      )
+        throw new Error(
+          pt
+            ? 'Rota salva, mas ainda inelegível para este projeto. Revise privacidade, preço e capacidades.'
+            : 'Route saved but not eligible for this project. Review privacy, price and capabilities.',
+        );
       persistQueueProgress(11, 'completed');
+      await onRefreshAll();
       setWizardStep(11);
+    } catch (error) {
+      setWizardError(describeError(error, language).message);
     } finally {
       setWizardBusy(false);
     }
@@ -547,54 +783,71 @@ export const MarketplaceWizardSection = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
+        flex: '1 1 0%',
         height: '100%',
+        minWidth: 0,
         minHeight: 0,
+        overflow: 'hidden',
         background: tokens.color.surface,
       }}
     >
-      {/* Search + Quick Assisted Wizard */}
+      {/* Pinned Search + Quick Assisted Wizard */}
       <div
         style={{
-          padding: 10,
+          padding: '8px 10px',
           borderBottom: `1px solid ${tokens.color.border}`,
+          display: 'flex',
+          gap: 6,
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          <Input
+            value={query}
+            placeholder={
+              pt
+                ? `Pesquisar ${snapshot.catalog.length} provedores ou modelos…`
+                : 'Search providers or models…'
+            }
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ paddingLeft: 28, height: 28 }}
+          />
+          <Search
+            size={13}
+            style={{
+              position: 'absolute',
+              left: 8,
+              top: 7,
+              color: tokens.color.textFaint,
+              pointerEvents: 'none',
+            }}
+          />
+        </div>
+        <Button
+          size="xs"
+          variant="primary"
+          icon={<Sparkles size={12} />}
+          onClick={() => openWizardFor(selectedItem?.entry)}
+        >
+          {pt ? 'Cadastro assistido' : 'Guided setup'}
+        </Button>
+      </div>
+
+      {/* Scrollable Filters + Resumable Queue + Provider List */}
+      <div
+        data-scroll-region="marketplace-list"
+        style={{
+          flex: '1 1 0%',
+          minWidth: 0,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: 8,
           display: 'flex',
           flexDirection: 'column',
           gap: 8,
         }}
       >
-        <div style={{ display: 'flex', gap: 6 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <Input
-              value={query}
-              placeholder={
-                pt
-                  ? `Pesquisar ${snapshot.catalog.length} provedores ou modelos…`
-                  : 'Search providers or models…'
-              }
-              onChange={(e) => setQuery(e.target.value)}
-              style={{ paddingLeft: 28, height: 28 }}
-            />
-            <Search
-              size={13}
-              style={{
-                position: 'absolute',
-                left: 8,
-                top: 7,
-                color: tokens.color.textFaint,
-                pointerEvents: 'none',
-              }}
-            />
-          </div>
-          <Button
-            size="xs"
-            variant="primary"
-            icon={<Sparkles size={12} />}
-            onClick={() => openWizardFor(selectedItem?.entry)}
-          >
-            {pt ? 'Cadastro assistido' : 'Guided setup'}
-          </Button>
-        </div>
-
         {/* Compact 12-filter matrix */}
         <div
           style={{
@@ -743,183 +996,195 @@ export const MarketplaceWizardSection = ({
             <option value="with-models">{pt ? 'Com modelos' : 'Has models'}</option>
           </Select>
         </div>
-      </div>
 
-      {/* Queue of Free/Assisted Signups */}
-      {signupQueue.length > 0 ? (
-        <div
-          style={{
-            padding: '8px 10px',
-            borderBottom: `1px solid ${tokens.color.border}`,
-            background: tokens.color.surfaceElevated,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 5,
-          }}
-        >
-          <div style={{ fontSize: 11, fontWeight: 700, color: tokens.color.textMuted }}>
-            {pt
-              ? `Fila de cadastros assistidos (${signupQueue.length})`
-              : `Assisted signup queue (${signupQueue.length})`}
-          </div>
-          {signupQueue.slice(0, 4).map((qItem) => (
-            <div
-              key={qItem.providerId}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 6,
-                fontSize: 11.5,
-              }}
-            >
-              <span>
-                <strong>{qItem.providerName}</strong>{' '}
-                <Badge tone={qItem.status === 'completed' ? 'success' : 'info'} mono>
-                  {qItem.currentStep}/11
-                </Badge>
-              </span>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  onClick={() => {
-                    const entry = snapshot.catalog.find((c) => c.id === qItem.providerId);
-                    openWizardFor(entry, qItem.currentStep);
-                  }}
-                >
-                  {pt ? 'Retomar' : 'Resume'}
-                </Button>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  icon={<Trash2 size={11} />}
-                  onClick={() =>
-                    onUpdateSignupQueue(
-                      signupQueue.filter((x) => x.providerId !== qItem.providerId),
-                    )
-                  }
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {/* Virtualized/windowed fast list (caps initial DOM render at 150 items with search narrowing) */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 4,
-        }}
-      >
-        {filteredCatalog.length === 0 ? (
+        {/* Queue of Free/Assisted Signups */}
+        {signupQueue.length > 0 ? (
           <div
             style={{
-              padding: 18,
-              textAlign: 'center',
-              fontSize: 12,
-              color: tokens.color.textMuted,
+              padding: '8px 10px',
+              borderRadius: tokens.radius.md,
+              border: `1px solid ${tokens.color.border}`,
+              background: tokens.color.surfaceElevated,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 5,
+              flexShrink: 0,
             }}
           >
-            {snapshot.catalog.length === 0
-              ? pt
-                ? 'Nenhum catálogo carregado no main ainda. Você pode iniciar um Cadastro Assistido manual ou importar um snapshot em Diagnóstico.'
-                : 'No catalog entries loaded yet.'
-              : pt
-                ? 'Nenhum provedor corresponde aos filtros atuais.'
-                : 'No providers match current filters.'}
-          </div>
-        ) : (
-          filteredCatalog.slice(0, 150).map((item) => {
-            const active = selectedItem?.entry.id === item.entry.id;
-            return (
-              <button
-                key={item.entry.id}
-                type="button"
-                onClick={() => setSelectedProviderId(item.entry.id)}
+            <div style={{ fontSize: 11, fontWeight: 700, color: tokens.color.textMuted }}>
+              {pt
+                ? `Fila de cadastros assistidos (${signupQueue.length})`
+                : `Assisted signup queue (${signupQueue.length})`}
+            </div>
+            {signupQueue.slice(0, 4).map((qItem) => (
+              <div
+                key={qItem.providerId}
                 style={{
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                  padding: '7px 9px',
-                  borderRadius: tokens.radius.md,
-                  border: `1px solid ${active ? tokens.color.accent : tokens.color.border}`,
-                  background: active ? tokens.color.accentSubtle : tokens.color.surfaceElevated,
-                  color: tokens.color.text,
-                  cursor: 'pointer',
-                  textAlign: 'left',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 6,
+                  fontSize: 11.5,
                 }}
               >
-                <div
+                <span>
+                  <strong>{qItem.providerName}</strong>{' '}
+                  <Badge tone={persistedCompleted(qItem.providerId) ? 'success' : 'info'} mono>
+                    {persistedCompleted(qItem.providerId)
+                      ? pt
+                        ? 'Rota salva'
+                        : 'Route saved'
+                      : pt
+                        ? 'Pendente'
+                        : 'Pending'}
+                  </Badge>
+                </span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={() => {
+                      const entry = snapshot.catalog.find((c) => c.id === qItem.providerId);
+                      openWizardFor(entry, qItem.currentStep);
+                    }}
+                  >
+                    {pt ? 'Retomar' : 'Resume'}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    icon={<Trash2 size={11} />}
+                    onClick={() =>
+                      onUpdateSignupQueue(
+                        signupQueue.filter((x) => x.providerId !== qItem.providerId),
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {/* Provider list (caps initial DOM render at 150 items with search narrowing) */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            flexShrink: 0,
+          }}
+        >
+          {filteredCatalog.length === 0 ? (
+            <div
+              style={{
+                padding: 18,
+                textAlign: 'center',
+                fontSize: 12,
+                color: tokens.color.textMuted,
+              }}
+            >
+              {snapshot.catalog.length === 0
+                ? pt
+                  ? 'Nenhum catálogo carregado no main ainda. Você pode iniciar um Cadastro Assistido manual ou importar um snapshot em Diagnóstico.'
+                  : 'No catalog entries loaded yet.'
+                : pt
+                  ? 'Nenhum provedor corresponde aos filtros atuais.'
+                  : 'No providers match current filters.'}
+            </div>
+          ) : (
+            filteredCatalog.slice(0, 150).map((item) => {
+              const active = selectedItem?.entry.id === item.entry.id;
+              return (
+                <button
+                  key={item.entry.id}
+                  type="button"
+                  onClick={() => setSelectedProviderId(item.entry.id)}
                   style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 6,
+                    flexDirection: 'column',
+                    flexShrink: 0,
+                    gap: 4,
+                    padding: '7px 9px',
+                    borderRadius: tokens.radius.md,
+                    border: `1px solid ${active ? tokens.color.accent : tokens.color.border}`,
+                    background: active ? tokens.color.accentSubtle : tokens.color.surfaceElevated,
+                    color: tokens.color.text,
+                    cursor: 'pointer',
+                    textAlign: 'left',
                   }}
                 >
-                  <strong style={{ fontSize: 12.5 }}>{item.entry.name}</strong>
-                  <Badge
-                    tone={
-                      item.opState === 'ready'
-                        ? 'success'
-                        : item.opState === 'unavailable'
-                          ? 'danger'
-                          : item.opState === 'configured'
-                            ? 'info'
-                            : 'outline'
-                    }
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
                   >
-                    {item.opState === 'ready'
-                      ? pt
-                        ? 'Operacional'
-                        : 'Ready'
-                      : item.opState === 'configured'
+                    <strong style={{ fontSize: 12.5 }}>{item.entry.name}</strong>
+                    <Badge
+                      tone={
+                        item.opState === 'ready'
+                          ? 'success'
+                          : item.opState === 'unavailable'
+                            ? 'danger'
+                            : item.opState === 'configured'
+                              ? 'info'
+                              : 'outline'
+                      }
+                    >
+                      {item.opState === 'ready'
                         ? pt
-                          ? 'Configurado'
-                          : 'Configured'
-                        : item.opState === 'unavailable'
+                          ? 'Operacional'
+                          : 'Ready'
+                        : item.opState === 'configured'
                           ? pt
-                            ? 'Indisponível'
-                            : 'Unavailable'
-                          : pt
-                            ? 'Descoberto'
-                            : 'Discovered'}
-                  </Badge>
-                </div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  <Badge tone="outline" mono>
-                    {item.entry.kind}
-                  </Badge>
-                  {item.hasVerifiedFreeModel ? (
-                    <Badge tone="success">{pt ? 'Gratuito verificado' : 'Verified free'}</Badge>
-                  ) : (
-                    <Badge tone="neutral">{pt ? 'Oferta desconhecida' : 'Unknown offer'}</Badge>
-                  )}
-                  {item.provModels.length > 0 ? (
-                    <Badge tone="info" mono>
-                      {item.provModels.length} mod.
+                            ? 'Configurado'
+                            : 'Configured'
+                          : item.opState === 'unavailable'
+                            ? pt
+                              ? 'Indisponível'
+                              : 'Unavailable'
+                            : pt
+                              ? 'Descoberto'
+                              : 'Discovered'}
                     </Badge>
-                  ) : null}
-                </div>
-              </button>
-            );
-          })
-        )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    <Badge tone="outline" mono>
+                      {item.entry.kind}
+                    </Badge>
+                    {item.hasVerifiedFreeModel ? (
+                      <Badge tone="success">{pt ? 'Gratuito verificado' : 'Verified free'}</Badge>
+                    ) : (
+                      <Badge tone="neutral">{pt ? 'Oferta desconhecida' : 'Unknown offer'}</Badge>
+                    )}
+                    {item.provModels.length > 0 ? (
+                      <Badge tone="info" mono>
+                        {item.provModels.length} mod.
+                      </Badge>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
 
   const rightDetailPane = (
     <div
+      data-scroll-region="marketplace-detail"
       style={{
+        flex: '1 1 0%',
         height: '100%',
+        minWidth: 0,
+        minHeight: 0,
         overflowY: 'auto',
+        overflowX: 'auto',
         padding: 14,
         display: 'flex',
         flexDirection: 'column',
@@ -1242,17 +1507,28 @@ export const MarketplaceWizardSection = ({
   );
 
   return (
-    <div style={{ height: '100%', minHeight: 500, display: 'flex', flexDirection: 'column' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <SplitPane
         direction="horizontal"
-        initialSize={370}
-        minSize={300}
-        maxSize={520}
+        initialSize={310}
+        minSize={220}
+        maxSize={480}
         first={leftListPane}
         second={rightDetailPane}
       />
 
-      {/* 11-Step Assisted Registration & Connection Dialog (§6) */}
+      {/* Guided registration; every advance is gated by a persisted outcome. */}
       <Dialog
         open={wizardOpen}
         width={680}
@@ -1260,11 +1536,7 @@ export const MarketplaceWizardSection = ({
           setWizardSecretValue('');
           setWizardOpen(false);
         }}
-        title={
-          pt
-            ? `Cadastro Assistido de Provedor — Etapa ${wizardStep} de 11`
-            : `Assisted Provider Setup — Step ${wizardStep} of 11`
-        }
+        title={pt ? 'Conectar provedor de IA' : 'Connect AI provider'}
         subtitle={
           pt
             ? 'Fluxo guiado sem automação indevida de contas; segredos cifrados via DPAPI e retomável a qualquer momento.'
@@ -1277,74 +1549,49 @@ export const MarketplaceWizardSection = ({
               variant="ghost"
               onClick={() => {
                 setWizardSecretValue('');
-                persistQueueProgress(wizardStep, 'in-progress');
+                persistQueueProgress(wizardStep, wizardStep === 11 ? 'completed' : 'in-progress');
                 setWizardOpen(false);
               }}
             >
               {pt ? 'Salvar na fila e retomar depois' : 'Save to queue & resume later'}
             </Button>
             <div style={{ display: 'flex', gap: 8 }}>
-              {wizardStep > 1 ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setWizardStep((s) => Math.max(1, s - 1))}
-                >
-                  {pt ? 'Anterior' : 'Back'}
-                </Button>
-              ) : null}
-              {wizardStep < 11 ? (
+              {wizardStep === 1 ? (
                 <Button
                   size="sm"
                   variant="primary"
                   onClick={() => {
-                    const next = Math.min(11, wizardStep + 1);
-                    persistQueueProgress(next, next === 11 ? 'completed' : 'in-progress');
-                    setWizardStep(next);
+                    persistQueueProgress(5, 'in-progress');
+                    setWizardStep(5);
                   }}
                 >
-                  {pt ? 'Avançar etapa' : 'Next step'}
+                  {pt ? 'Escolher credencial' : 'Choose credential'}
                 </Button>
-              ) : (
+              ) : wizardStep === 9 ? (
                 <Button
                   size="sm"
                   variant="primary"
                   icon={<CheckCircle2 size={14} />}
-                  onClick={() => {
-                    persistQueueProgress(11, 'completed');
-                    setWizardOpen(false);
-                  }}
+                  loading={wizardBusy}
+                  disabled={!activeProjectId}
+                  onClick={() => void handleWizardComplete()}
                 >
                   {pt ? 'Concluir cadastro' : 'Finish'}
                 </Button>
-              )}
+              ) : wizardStep === 11 ? (
+                <Button size="sm" variant="primary" onClick={() => setWizardOpen(false)}>
+                  {pt ? 'Fechar' : 'Close'}
+                </Button>
+              ) : null}
             </div>
           </div>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Step pills 1..11 */}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {Array.from({ length: 11 }, (_, i) => i + 1).map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setWizardStep(n)}
-                style={{
-                  padding: '3px 7px',
-                  fontSize: 11,
-                  borderRadius: tokens.radius.sm,
-                  border: `1px solid ${wizardStep === n ? tokens.color.accent : tokens.color.border}`,
-                  background:
-                    wizardStep === n ? tokens.color.accentSubtle : tokens.color.surfaceElevated,
-                  color: wizardStep === n ? tokens.color.accent : tokens.color.textMuted,
-                  cursor: 'pointer',
-                  fontFamily: tokens.font.mono,
-                }}
-              >
-                #{n}
-              </button>
-            ))}
+          <div className="db-muted" style={{ fontSize: 12 }}>
+            {pt
+              ? 'Fluxo: provedor → credencial → conexão → autenticação e modelos → rota → política e teste.'
+              : 'Flow: provider → credential → connection → authentication and models → route → policy and test.'}
           </div>
 
           {wizardError ? <Banner tone="danger">{wizardError}</Banner> : null}
@@ -1463,8 +1710,8 @@ export const MarketplaceWizardSection = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <strong>
                 {pt
-                  ? '5. Inserir credencial na interface segura (DPAPI / Variável de ambiente)'
-                  : '5. Store credential securely'}
+                  ? '2. Inserir ou reutilizar credencial cifrada'
+                  : '2. Store or reuse credential'}
               </strong>
               <Field label={pt ? 'Modo de credencial' : 'Credential mode'}>
                 {(props) => (
@@ -1573,7 +1820,7 @@ export const MarketplaceWizardSection = ({
           {wizardStep === 6 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <strong>
-                {pt ? '6. Registrar endpoint e conexão' : '6. Register endpoint & connection'}
+                {pt ? '3. Registrar endpoint e conexão' : '3. Register endpoint & connection'}
               </strong>
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
                 <Field label={pt ? 'Base URL (HTTPS ou loopback)' : 'Base URL'} required>
@@ -1622,8 +1869,8 @@ export const MarketplaceWizardSection = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <strong>
                 {pt
-                  ? '7. Validar autenticação (consulta de modelos sem gerar texto)'
-                  : '7. Validate authentication'}
+                  ? '4. Validar autenticação e descobrir modelos sem gerar texto'
+                  : '4. Authenticate and discover models'}
               </strong>
               <div>
                 <Button
@@ -1644,30 +1891,48 @@ export const MarketplaceWizardSection = ({
           {wizardStep === 8 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <strong>
-                {pt ? '8. Descobrir ou declarar modelo inicial' : '8. Discover or register model'}
+                {pt ? '5. Escolher modelo descoberto' : '5. Choose a discovered model'}
               </strong>
-              <Field
-                label={
-                  pt
-                    ? 'Identificador upstream do modelo (ex.: qwen/qwen3-coder:free)'
-                    : 'Upstream model ID'
-                }
-              >
+              <Field label={pt ? 'Modelos retornados pela API' : 'Models returned by provider API'}>
                 {(props) => (
-                  <Input
+                  <Select
                     {...props}
-                    mono
                     value={wizardModelUpstreamId}
-                    placeholder="openai/gpt-4.1-mini"
                     onChange={(e) => setWizardModelUpstreamId(e.target.value)}
-                  />
+                  >
+                    <option value="">{pt ? 'Selecione um modelo' : 'Select a model'}</option>
+                    {wizardDiscoveredModels.map((model) => (
+                      <option key={model.upstreamModelId} value={model.upstreamModelId}>
+                        {model.name} ·{' '}
+                        {model.pricing?.inputPerMillion === 0 &&
+                        model.pricing.outputPerMillion === 0
+                          ? pt
+                            ? 'gratuito verificado'
+                            : 'verified free'
+                          : model.pricing
+                            ? pt
+                              ? 'pago'
+                              : 'paid'
+                            : pt
+                              ? 'preço desconhecido'
+                              : 'unknown price'}{' '}
+                        · {model.tools === true ? 'tools ✓' : 'tools ?'}
+                      </option>
+                    ))}
+                  </Select>
                 )}
               </Field>
+              <div className="db-muted" style={{ fontSize: 12 }}>
+                {pt
+                  ? 'Preços e ferramentas só são afirmados quando constam dos metadados oficiais. Dados ausentes permanecem desconhecidos.'
+                  : 'Prices and tools are shown only when provider metadata confirms them.'}
+              </div>
               <div>
                 <Button
                   size="sm"
                   variant="primary"
                   loading={wizardBusy}
+                  disabled={!wizardModelUpstreamId}
                   onClick={() => void handleWizardSaveModel()}
                 >
                   {pt ? 'Registrar modelo e avançar' : 'Save model & continue'}
@@ -1680,9 +1945,63 @@ export const MarketplaceWizardSection = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <strong>
                 {pt
-                  ? '9. Autorizar teste opcional de inferência'
-                  : '9. Authorize optional inference test'}
+                  ? '7. Privacidade, orçamento e teste opcional'
+                  : '7. Privacy, budget and optional inference test'}
               </strong>
+              <Field label={pt ? 'Privacidade do projeto' : 'Project privacy'}>
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={wizardPrivacy}
+                    onChange={(event) =>
+                      setWizardPrivacy(event.target.value as ProjectPrivacyClass)
+                    }
+                  >
+                    {Object.entries(PRIVACY_CLASSIFICATIONS).map(([value, meta]) => (
+                      <option key={value} value={value}>
+                        {pt ? meta.labelPt : meta.labelEn}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Checkbox
+                checked={wizardAllowPaid}
+                onChange={(event) => setWizardAllowPaid(event.target.checked)}
+                label={
+                  pt ? 'Autorizar modelos pagos neste projeto' : 'Allow paid models in this project'
+                }
+              />
+              <Checkbox
+                checked={wizardApproveProvider}
+                onChange={(event) => setWizardApproveProvider(event.target.checked)}
+                label={
+                  pt
+                    ? 'Aprovo este provedor para receber conteúdo deste projeto'
+                    : 'Approve this provider for this project content'
+                }
+              />
+              <Field
+                label={pt ? 'Teto diário em USD (opcional)' : 'Daily ceiling in USD (optional)'}
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={wizardDailyBudget}
+                    onChange={(event) => setWizardDailyBudget(event.target.value)}
+                  />
+                )}
+              </Field>
+              {!activeProjectId ? (
+                <Banner tone="danger">
+                  {pt
+                    ? 'Selecione um projeto para aplicar privacidade, orçamento e teste.'
+                    : 'Select a project for privacy, budget and test.'}
+                </Banner>
+              ) : null}
               <Checkbox
                 checked={wizardAuthorizeInferenceTest}
                 onChange={(e) => setWizardAuthorizeInferenceTest(e.target.checked)}
@@ -1712,9 +2031,7 @@ export const MarketplaceWizardSection = ({
 
           {wizardStep === 10 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <strong>
-                {pt ? '10. Configurar rota e política de utilização' : '10. Configure route policy'}
-              </strong>
+              <strong>{pt ? '6. Criar rota para o modelo' : '6. Create model route'}</strong>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label={pt ? 'Prioridade da rota (menor = preferida)' : 'Route priority'}>
                   {(props) => (
@@ -1745,14 +2062,14 @@ export const MarketplaceWizardSection = ({
                   loading={wizardBusy}
                   onClick={() => void handleWizardConfigureRoute()}
                 >
-                  {pt ? 'Salvar rota e avançar para conclusão' : 'Save route & continue'}
+                  {pt ? 'Salvar rota e configurar política' : 'Save route & configure policy'}
                 </Button>
               </div>
             </div>
           ) : null}
 
           {wizardStep === 11 ? (
-            <Banner tone="success" title={pt ? '11. Configuração concluída' : '11. Setup complete'}>
+            <Banner tone="success" title={pt ? 'Configuração persistida' : 'Setup persisted'}>
               {pt
                 ? `Provedor "${wizardProviderName}" registrado no fluxo assistido. Você pode gerenciar chaves, cotas, modelos e rotas nas abas Minhas Conexões e Estratégias.`
                 : `Provider "${wizardProviderName}" setup completed.`}

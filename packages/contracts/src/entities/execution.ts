@@ -49,11 +49,50 @@ export const canTransition = (from: ExecutionStatus, to: ExecutionStatus): boole
   EXECUTION_TRANSITIONS[from].includes(to);
 
 /** An instruction sent to an agent (natural-language prompt). */
+/**
+ * @since 0.8.0 — options for agents that run on the DevBrain AI gateway (`devbrain-agent`).
+ * Limits are hard caps enforced by the runtime; model text can never raise them.
+ */
+export const GatewayAgentOptionsSchema = z.object({
+  routingPolicyId: z.string().regex(/^[a-z0-9][a-z0-9._:-]{1,127}$/),
+  /** Pin one model; null = intelligent routing under the policy. */
+  modelId: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9._:-]{1,127}$/)
+    .nullable()
+    .default(null),
+  /** Commands the user pre-authorized for `run_command` (no shell; model picks by id). */
+  allowedCommands: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/),
+        executable: z.string().min(1).max(1024),
+        args: z.array(z.string().max(4096)).max(64),
+        timeoutMs: z.number().int().min(1000).max(600_000).default(120_000),
+      }),
+    )
+    .max(20)
+    .default([]),
+  maxTurns: z.number().int().min(1).max(100).default(24),
+  maxToolCalls: z.number().int().min(1).max(500).default(80),
+  maxTotalTokens: z.number().int().min(1000).max(10_000_000).default(400_000),
+  maxDurationMs: z
+    .number()
+    .int()
+    .min(10_000)
+    .max(4 * 60 * 60 * 1000)
+    .default(20 * 60 * 1000),
+  maxOutputTokensPerTurn: z.number().int().min(64).max(64_000).default(4096),
+});
+export type GatewayAgentOptions = z.infer<typeof GatewayAgentOptionsSchema>;
+
 const PromptPayloadSchema = z.object({
   kind: z.literal('prompt'),
   prompt: z.string().min(1).max(1_000_000),
   /** Workspace-relative files attached as context. Content is treated as untrusted. */
   contextFiles: z.array(z.string().min(1)).max(500).default([]),
+  /** @since 0.8.0 — required by gateway agents, ignored by CLI agents. */
+  gateway: GatewayAgentOptionsSchema.optional(),
 });
 
 /**
@@ -135,6 +174,22 @@ export const ExecutionEventSchema = z.discriminatedUnion('type', [
     type: z.literal('tool-call'),
     tool: z.string().max(200),
     input: z.record(z.string(), z.unknown()),
+    /** @since 0.8.0 — correlation id and execution state (gateway agents). */
+    callId: z.string().max(200).optional(),
+    state: z
+      .enum([
+        'proposed',
+        'invalid',
+        'denied',
+        'awaiting-approval',
+        'running',
+        'succeeded',
+        'failed',
+        'unknown',
+      ])
+      .optional(),
+    /** Redacted, truncated result summary. */
+    result: z.string().max(65_536).optional(),
   }),
   z.object({
     ...EventBase,

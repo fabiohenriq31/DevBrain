@@ -5,6 +5,7 @@ import type {
   AgentSession,
   ApplicationSettings,
   BenchmarkResult,
+  CostRecord,
   CredentialReference,
   DependencyReport,
   ModelAvailability,
@@ -141,6 +142,7 @@ export const AiResourceCenterView = ({
   // Diagnostic inference streaming state
   const [activeInferenceRequestId, setActiveInferenceRequestId] = useState<string | null>(null);
   const [activeInferenceStream, setActiveInferenceStream] = useState<string>('');
+  const [lastInferenceCost, setLastInferenceCost] = useState<CostRecord | null>(null);
 
   const refreshGatewayAndCore = useCallback(async () => {
     setLoading(true);
@@ -265,6 +267,9 @@ export const AiResourceCenterView = ({
           (prev) => `${prev}\n[#${ev.seq} completed finish=${ev.result.finishReason}]\n`,
         );
         setActiveInferenceRequestId(null);
+        void callAiChannel('ai.cost.get', { requestId: ev.requestId }).then((out) => {
+          if (out.status === 'ok') setLastInferenceCost(out.data);
+        });
         if (ev.result.usage) {
           const usageItem = ev.result.usage;
           setSnapshot((s) => ({
@@ -306,9 +311,11 @@ export const AiResourceCenterView = ({
     const id = `diag-${Date.now()}`;
     setActiveInferenceRequestId(id);
     setActiveInferenceStream('');
+    setLastInferenceCost(null);
     const out = await callAiChannel('ai.inference.submit', {
       id,
       sessionId: null,
+      ...(activeProject ? { projectId: activeProject.id } : {}),
       modelId: null,
       messages: [{ role: 'user', content: prompt }],
       maxOutputTokens: 128,
@@ -376,7 +383,18 @@ export const AiResourceCenterView = ({
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <div
         style={{
           padding: '10px 16px',
@@ -387,6 +405,7 @@ export const AiResourceCenterView = ({
           justifyContent: 'space-between',
           gap: 10,
           flexWrap: 'wrap',
+          flexShrink: 0,
         }}
       >
         <div>
@@ -409,12 +428,33 @@ export const AiResourceCenterView = ({
       />
 
       <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: activeTab === 'marketplace' || activeTab === 'agents' ? 'hidden' : 'auto',
-          padding: activeTab === 'marketplace' || activeTab === 'agents' ? 0 : 14,
-        }}
+        data-scroll-region={
+          activeTab === 'marketplace' || activeTab === 'agents'
+            ? 'ai-center-split-host'
+            : `ai-center-${activeTab}`
+        }
+        style={
+          activeTab === 'marketplace' || activeTab === 'agents'
+            ? {
+                display: 'flex',
+                flexDirection: 'column',
+                flex: '1 1 0%',
+                minWidth: 0,
+                minHeight: 0,
+                overflow: 'hidden',
+                padding: 0,
+              }
+            : {
+                display: 'flex',
+                flexDirection: 'column',
+                flex: '1 1 0%',
+                minWidth: 0,
+                minHeight: 0,
+                overflowY: 'auto',
+                overflowX: 'auto',
+                padding: 14,
+              }
+        }
       >
         {activeTab === 'overview' ? (
           <OverviewSection
@@ -434,6 +474,7 @@ export const AiResourceCenterView = ({
         {activeTab === 'marketplace' ? (
           <MarketplaceWizardSection
             snapshot={snapshot}
+            activeProjectId={activeProject?.id ?? null}
             credentials={credentials}
             projectPrivacy={projectPrivacy}
             approvedProviderIds={strategyDraft.allowedProviderIds}
@@ -518,6 +559,7 @@ export const AiResourceCenterView = ({
             projects={projects}
             agents={agents}
             settings={settings}
+            activeProjectId={activeProject?.id ?? null}
             coreUsageDay={coreUsageDay}
             coreUsageMonth={coreUsageMonth}
             onQueryAccountCredit={handleQueryAccountCredit}
@@ -532,6 +574,7 @@ export const AiResourceCenterView = ({
             projects={projects}
             agents={agents}
             settings={settings}
+            activeProjectId={activeProject?.id ?? null}
             coreUsageDay={coreUsageDay}
             coreUsageMonth={coreUsageMonth}
             onQueryAccountCredit={handleQueryAccountCredit}
@@ -543,6 +586,7 @@ export const AiResourceCenterView = ({
           <RoutingStrategiesSection
             snapshot={snapshot}
             settings={settings}
+            activeProjectId={activeProject?.id ?? null}
             projectPrivacy={projectPrivacy}
             onChangeProjectPrivacy={onChangeProjectPrivacy}
             strategyDraft={strategyDraft}
@@ -558,6 +602,8 @@ export const AiResourceCenterView = ({
         {activeTab === 'benchmarks' ? (
           <BenchmarksSection
             snapshot={snapshot}
+            activeProjectId={activeProject?.id ?? null}
+            routingPolicyId={strategyDraft.policyId}
             onRecordBenchmark={(res: BenchmarkResult) =>
               setSnapshot((prev) => ({
                 ...prev,
@@ -572,8 +618,10 @@ export const AiResourceCenterView = ({
           <DiagnosticsSection
             snapshot={snapshot}
             sessions={projectSessions}
+            activeProjectId={activeProject?.id ?? null}
             activeInferenceStream={activeInferenceStream}
             activeInferenceRequestId={activeInferenceRequestId}
+            lastInferenceCost={lastInferenceCost}
             onSubmitDiagInference={handleSubmitDiagInference}
             onCancelDiagInference={handleCancelDiagInference}
             onRefreshAll={handleRefreshAll}

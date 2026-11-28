@@ -1,7 +1,11 @@
 # Contratos compartilhados
 
-Pacote: `@devbrain/contracts`. Versão atual: **0.6.0**, em `CONTRACTS_VERSION`; protocolo
+Pacote: `@devbrain/contracts`. Versão atual: **0.8.0**, em `CONTRACTS_VERSION`; protocolo
 IPC **v1**, em `IPC_PROTOCOL_VERSION`.
+
+0.8.0 acrescenta chamadas de ferramentas ao gateway e as opções do agente nativo
+(`devbrain-agent`). 0.7.1 ampliou `LocalModel.modelId` para identificadores upstream com
+`/`. Todos os canais anteriores permanecem compatíveis.
 
 Os contratos são a única interface entre os módulos dos três agentes. São escritos em
 zod, o que dá tipos estáticos (`z.infer`) e validação em runtime nas fronteiras de
@@ -135,6 +139,51 @@ isso fizer sentido (por exemplo, exibir "desconhecido" na UI). O main recusa um 
 com major diferente (`CONTRACT_VERSION_MISMATCH`).
 
 ## Changelog
+
+### 0.8.0 (Fase 02, ponte de ferramentas, agente nativo e onboarding verificável)
+
+Somente aditiva (MINOR). Namespace IPC `devbrain:v1` mantido.
+
+- `ToolDefinition` (nome `^[a-zA-Z0-9_-]{1,64}$`, descrição, `parameters` em JSON Schema
+  limitado a 64 KB), `ToolCall` (`id`, `name`, `arguments` como texto JSON bruto produzido
+  pelo modelo), `ToolChoice` (`auto` | `none` | `required` | `{ name }`) e
+  `ToolCallState` (`proposed`, `invalid`, `denied`, `awaiting-approval`, `running`,
+  `succeeded`, `failed`, `unknown`).
+- `InferenceMessage` ganha `toolCalls?` (turno do assistente, chamadas paralelas),
+  `name?` e `isError?` (resultado de ferramenta); `toolCallId` correlaciona resultado e
+  chamada. `InferenceRequest` ganha `tools?`, `toolChoice?` e `parallelToolCalls?`;
+  `InferenceResult` ganha `toolCalls?`; `InferenceEvent` ganha `tool-call-delta`
+  (fragmentos de argumentos em streaming, correlacionados por `index`).
+- `GatewayAgentOptions` em `PromptPayload.gateway?`: estratégia de roteamento, modelo fixo
+  ou roteamento automático, comandos pré-autorizados (sem shell) e limites de turnos,
+  chamadas, tokens, duração e saída por turno.
+- Evento de execução `tool-call` ganha `callId?`, `state?` e `result?` (resumo redigido).
+- Canal `ai.policies.list`: estratégias de roteamento configuradas.
+- O gateway **transporta** chamadas e resultados; nunca executa ferramentas.
+- `DiscoveredProviderModel` com preço, ferramentas e limites de contexto
+  explícitos (valores ausentes = `null`), `ConnectionDiscovery` e canal
+  `ai.connections.discover`. A autenticação e descoberta não dependem de rota
+  nem fazem inferência.
+
+### 0.7.0 (Fase 02, inteligência de recursos — Claude)
+
+Somente aditiva (MINOR). Namespace IPC `devbrain:v1` mantido.
+
+- Novos módulos `entities/task.ts` (`TaskKind` com 12 especialidades, `QualityTier`,
+  `TaskPriority`, `TaskProfile`) e `entities/intelligence.ts` (classe de privacidade do
+  projeto, `ProviderPrivacyProfile` com todos os fatos `unknown` por padrão,
+  `ProjectAiPolicy`, `ExplainedRoutingDecision`, `ExclusionCode`, `CostState`,
+  `CostRecord`, `BudgetStatus`, `QuotaForecast`, `SideEffect`, `HandoffPacket`,
+  `ContextOptimizationReport`, `BenchmarkRun`, `ModelEvidence`).
+- Dinheiro sempre em **micros inteiros** (1 unidade = 1.000.000 micros); nunca float.
+- `PricingDefinition.contextTiers?` (preço por faixa de contexto), `QuotaScope` ganha
+  `global` e `session`, `QuotaDefinition.origin?` (`provider` | `devbrain`),
+  `RoutingPolicy.preset?`/`weights?`/`allowExploration?`, `InferenceRequest.projectId?` e
+  `task?`.
+- 13 canais: `ai.projectPolicy.get/save`, `ai.privacyProfiles.list/save`,
+  `ai.routes.explain`, `ai.cost.get`, `ai.budget.status`, `ai.quota.forecast`,
+  `ai.benchmark.suites/run/quality`, `ai.context.preview`, `ai.handoff.build`.
+  `ai.routes.select` (0.5.0) passa a ter handler.
 
 ### 0.6.0 (Fase 02, adições de integração)
 

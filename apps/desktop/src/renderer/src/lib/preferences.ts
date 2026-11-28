@@ -1,4 +1,4 @@
-import type { ProjectPrivacyClass, StrategyPresetId } from './ai-center';
+import type { StrategyPresetId } from './ai-center';
 
 /**
  * Non-secret UI layout & workflow preferences stored locally in the renderer profile.
@@ -23,19 +23,11 @@ export interface UiPreferences {
   inspectorWidth: number;
   terminalHeight: number;
   activeProjectId: string | null;
-  projectPrivacy: Record<string, ProjectPrivacyClass>;
   signupQueue: AssistedSignupQueueItem[];
   selectedStrategyPreset: StrategyPresetId;
 }
 
 const STORAGE_KEY = 'devbrain.ui.preferences.v1';
-
-const VALID_PRIVACY: ReadonlySet<ProjectPrivacyClass> = new Set([
-  'public',
-  'personal-private',
-  'commercial-confidential',
-  'restricted',
-]);
 
 const VALID_STRATEGY: ReadonlySet<StrategyPresetId> = new Set([
   'free-only',
@@ -56,7 +48,6 @@ export const DEFAULT_UI_PREFERENCES: UiPreferences = Object.freeze({
   inspectorWidth: 300,
   terminalHeight: 320,
   activeProjectId: null,
-  projectPrivacy: {},
   signupQueue: [],
   selectedStrategyPreset: 'balanced',
 });
@@ -65,21 +56,6 @@ const clampInt = (value: unknown, fallback: number, min: number, max: number): n
   typeof value === 'number' && Number.isFinite(value)
     ? Math.min(max, Math.max(min, Math.round(value)))
     : fallback;
-
-const sanitizeProjectPrivacy = (raw: unknown): Record<string, ProjectPrivacyClass> => {
-  if (!raw || typeof raw !== 'object') return {};
-  const out: Record<string, ProjectPrivacyClass> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (
-      k.startsWith('prj_') &&
-      typeof v === 'string' &&
-      VALID_PRIVACY.has(v as ProjectPrivacyClass)
-    ) {
-      out[k] = v as ProjectPrivacyClass;
-    }
-  }
-  return out;
-};
 
 const sanitizeSignupQueue = (raw: unknown): AssistedSignupQueueItem[] => {
   if (!Array.isArray(raw)) return [];
@@ -113,7 +89,6 @@ export const parseUiPreferences = (raw: string | null): UiPreferences => {
   if (!raw)
     return {
       ...DEFAULT_UI_PREFERENCES,
-      projectPrivacy: {},
       signupQueue: [],
     };
   try {
@@ -157,7 +132,6 @@ export const parseUiPreferences = (raw: string | null): UiPreferences => {
         typeof parsed.activeProjectId === 'string' && parsed.activeProjectId.startsWith('prj_')
           ? parsed.activeProjectId
           : null,
-      projectPrivacy: sanitizeProjectPrivacy(parsed.projectPrivacy),
       signupQueue: sanitizeSignupQueue(parsed.signupQueue),
       selectedStrategyPreset:
         typeof parsed.selectedStrategyPreset === 'string' &&
@@ -168,7 +142,6 @@ export const parseUiPreferences = (raw: string | null): UiPreferences => {
   } catch {
     return {
       ...DEFAULT_UI_PREFERENCES,
-      projectPrivacy: {},
       signupQueue: [],
     };
   }
@@ -180,7 +153,6 @@ export const loadUiPreferences = (): UiPreferences => {
   } catch {
     return {
       ...DEFAULT_UI_PREFERENCES,
-      projectPrivacy: {},
       signupQueue: [],
     };
   }
@@ -211,7 +183,6 @@ export const saveUiPreferences = (prefs: UiPreferences): void => {
         prefs.activeProjectId && prefs.activeProjectId.startsWith('prj_')
           ? prefs.activeProjectId
           : null,
-      projectPrivacy: sanitizeProjectPrivacy(prefs.projectPrivacy),
       signupQueue: sanitizeSignupQueue(prefs.signupQueue),
       selectedStrategyPreset: VALID_STRATEGY.has(prefs.selectedStrategyPreset)
         ? prefs.selectedStrategyPreset

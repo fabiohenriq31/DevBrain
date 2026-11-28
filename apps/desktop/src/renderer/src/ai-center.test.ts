@@ -164,7 +164,7 @@ describe('Phase 02 — IPC probing, navigation & assisted signup preference secu
     }
   });
 
-  it('persists assisted signup queue & project privacy while stripping any secret fields from localStorage', () => {
+  it('persists assisted signup queue without privacy policy or secrets in localStorage', () => {
     const rawWithInjectedSecrets = JSON.stringify({
       projectPrivacy: {
         prj_111: 'restricted',
@@ -187,10 +187,7 @@ describe('Phase 02 — IPC probing, navigation & assisted signup preference secu
     });
 
     const parsed = parseUiPreferences(rawWithInjectedSecrets);
-    expect(parsed.projectPrivacy).toEqual({
-      prj_111: 'restricted',
-      prj_222: 'commercial-confidential',
-    });
+    expect(JSON.stringify(parsed)).not.toContain('projectPrivacy');
     expect(parsed.selectedStrategyPreset).toBe('free-only');
     expect(parsed.signupQueue).toHaveLength(1);
     expect(parsed.signupQueue[0]?.currentStep).toBe(5);
@@ -214,6 +211,7 @@ describe('Phase 02 — IPC probing, navigation & assisted signup preference secu
       saveUiPreferences(parsed);
       const serialized = [...storedMap.values()].join(' ');
       expect(serialized).toContain('openrouter');
+      expect(serialized).not.toContain('projectPrivacy');
       expect(serialized).not.toContain('sk-or-v1');
     } finally {
       if (prevWindow === undefined) delete g.window;
@@ -722,6 +720,7 @@ describe('Phase 02 — Multi-provider model grouping, local hardware estimates &
     const marketplaceHtml = renderToStaticMarkup(
       React.createElement(MarketplaceWizardSection, {
         snapshot,
+        activeProjectId: null,
         credentials: [],
         projectPrivacy: 'personal-private',
         approvedProviderIds: ['prov-1'],
@@ -789,6 +788,7 @@ describe('Phase 02 — Multi-provider model grouping, local hardware estimates &
         projects: [],
         agents: [],
         settings: null,
+        activeProjectId: null,
         coreUsageDay: null,
         coreUsageMonth: null,
         onQueryAccountCredit: async () => undefined,
@@ -801,6 +801,7 @@ describe('Phase 02 — Multi-provider model grouping, local hardware estimates &
       React.createElement(RoutingStrategiesSection, {
         snapshot,
         settings: null,
+        activeProjectId: null,
         projectPrivacy: 'personal-private',
         onChangeProjectPrivacy: () => undefined,
         strategyDraft: buildPresetStrategy('free-only'),
@@ -811,23 +812,29 @@ describe('Phase 02 — Multi-provider model grouping, local hardware estimates &
     );
     expect(routingHtml).toContain('Somente gratuito');
     expect(routingHtml).toContain('Somente local');
+    expect(routingHtml).toContain('Fatos de privacidade verificados');
 
     const benchmarksHtml = renderToStaticMarkup(
       React.createElement(BenchmarksSection, {
         snapshot: makeEmptySnapshot('ready'),
+        activeProjectId: null,
+        routingPolicyId: 'policy-balanced',
         onRecordBenchmark: () => undefined,
         language: 'pt-BR',
       }),
     );
     expect(benchmarksHtml).toContain('Executar benchmark');
     expect(benchmarksHtml).toContain('zero notas fictícias');
+    expect(benchmarksHtml).toContain('Suítes de avaliação estruturada');
 
     const diagnosticsHtml = renderToStaticMarkup(
       React.createElement(DiagnosticsSection, {
         snapshot: makeEmptySnapshot('unsupported'),
         sessions: [],
+        activeProjectId: null,
         activeInferenceStream: '',
         activeInferenceRequestId: null,
+        lastInferenceCost: null,
         onSubmitDiagInference: async () => undefined,
         onCancelDiagInference: async () => undefined,
         onRefreshAll: async () => undefined,

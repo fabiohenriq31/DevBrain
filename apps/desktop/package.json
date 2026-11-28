@@ -1,7 +1,7 @@
 {
   "name": "@devbrain/desktop",
   "productName": "DevBrain AI",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "DevBrain AI desktop application (Electron).",
   "type": "module",
@@ -12,10 +12,13 @@
     "dist:win": "pnpm build && electron-builder --win nsis:x64 --publish never",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
-    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json"
+    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
+    "verify:scroll": "node src/renderer/scroll-e2e.mjs"
   },
   "dependencies": {
     "@devbrain/contracts": "workspace:*",
+    "@devbrain/ai-gateway": "workspace:*",
+    "@devbrain/intelligence": "workspace:*",
     "@devbrain/core": "workspace:*",
     "@devbrain/database": "workspace:*",
     "@devbrain/execution-engine": "workspace:*",

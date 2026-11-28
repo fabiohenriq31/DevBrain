@@ -1,9 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   AgentSession,
   ApplicationSettings,
   BenchmarkResult,
+  BenchmarkRun,
+  CostRecord,
+  ExplainedRoutingDecision,
   FallbackAttempt,
+  HandoffPacket,
+  ModelEvidence,
+  ProviderPrivacyProfile,
   RoutingDecision,
   TaskCheckpoint,
 } from '@devbrain/contracts';
@@ -50,6 +56,7 @@ import { formatTimestamp, type AppLanguage } from '../../lib/i18n';
 export interface RoutingStrategiesSectionProps {
   snapshot: AiResourceSnapshot;
   settings: ApplicationSettings | null;
+  activeProjectId: string | null;
   projectPrivacy: ProjectPrivacyClass;
   onChangeProjectPrivacy: (next: ProjectPrivacyClass) => void;
   strategyDraft: StrategyDraft;
@@ -70,6 +77,7 @@ const PRESET_LABELS: readonly { id: StrategyPresetId; pt: string; en: string }[]
 export const RoutingStrategiesSection = ({
   snapshot,
   settings,
+  activeProjectId,
   projectPrivacy,
   onChangeProjectPrivacy,
   strategyDraft,
@@ -92,6 +100,69 @@ export const RoutingStrategiesSection = ({
 
   // Router dry-run explanation
   const [routerDecision, setRouterDecision] = useState<RoutingDecision | null>(null);
+  const [routerExplanation, setRouterExplanation] = useState<ExplainedRoutingDecision | null>(null);
+  const [privacyProfiles, setPrivacyProfiles] = useState<ProviderPrivacyProfile[]>([]);
+  const [profileProviderId, setProfileProviderId] = useState('');
+  const [profileTraining, setProfileTraining] = useState<'unknown' | 'no' | 'opt-out' | 'yes'>(
+    'unknown',
+  );
+  const [profileRetention, setProfileRetention] = useState<
+    'unknown' | 'none' | 'limited' | 'indefinite'
+  >('unknown');
+  const [profileCommercial, setProfileCommercial] = useState<'unknown' | 'allowed' | 'restricted'>(
+    'unknown',
+  );
+  const [profileSourceUrl, setProfileSourceUrl] = useState('');
+  const [profileConfirmed, setProfileConfirmed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void callAiChannel('ai.privacyProfiles.list', {}).then((out) => {
+      if (active && out.status === 'ok') setPrivacyProfiles(out.data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleSavePrivacyProfile = async () => {
+    if (!profileProviderId || !profileConfirmed || !/^https:\/\//i.test(profileSourceUrl)) return;
+    const existing = privacyProfiles.find((profile) => profile.providerId === profileProviderId);
+    const out = await callAiChannel('ai.privacyProfiles.save', {
+      ...(existing?.sourceUrl === profileSourceUrl ? existing : {}),
+      providerId: profileProviderId,
+      trainingOnInputs: profileTraining,
+      retention: profileRetention,
+      commercialUse: profileCommercial,
+      sourceUrl: profileSourceUrl,
+      verifiedBy: 'user',
+    });
+    if (out.status === 'ok') {
+      setPrivacyProfiles((prev) => [
+        out.data,
+        ...prev.filter((profile) => profile.providerId !== out.data.providerId),
+      ]);
+      setProfileConfirmed(false);
+      setFeedback({
+        tone: 'success',
+        text: pt ? 'Perfil de privacidade salvo.' : 'Privacy profile saved.',
+      });
+    } else {
+      setFeedback({
+        tone: 'danger',
+        text: out.status === 'unsupported' ? out.message : out.error.message,
+      });
+    }
+  };
+  const selectProfileProvider = (providerId: string) => {
+    setProfileProviderId(providerId);
+    const existing = privacyProfiles.find((profile) => profile.providerId === providerId);
+    setProfileTraining((existing?.trainingOnInputs ?? 'unknown') as typeof profileTraining);
+    setProfileRetention((existing?.retention ?? 'unknown') as typeof profileRetention);
+    setProfileCommercial((existing?.commercialUse ?? 'unknown') as typeof profileCommercial);
+    setProfileSourceUrl(existing?.sourceUrl ?? '');
+    setProfileConfirmed(false);
+  };
 
   const guardrails = useMemo(
     () =>
@@ -173,21 +244,30 @@ export const RoutingStrategiesSection = ({
   };
 
   const handleSimulateRouter = async () => {
+    if (!activeProjectId) return;
     setFeedback(null);
+    setRouterDecision(null);
+    setRouterExplanation(null);
     setBusy(true);
     try {
       const reqId = `dryrun-${Date.now()}`;
-      const res = await callAiChannel('ai.routes.select', {
+      const request = {
         id: reqId,
         sessionId: null,
+        ...(activeProjectId ? { projectId: activeProjectId } : {}),
         modelId: null,
-        messages: [{ role: 'user', content: 'Inspecionar decisão do roteador.' }],
+        messages: [{ role: 'user' as const, content: 'Inspecionar decisão do roteador.' }],
         maxOutputTokens: 256,
         temperature: 0,
         stream: false,
         routingPolicyId: strategyDraft.policyId,
         idempotencyKey: null,
-      });
+      };
+      const [res, explanation] = await Promise.all([
+        callAiChannel('ai.routes.select', request),
+        callAiChannel('ai.routes.explain', request),
+      ]);
+      setRouterExplanation(explanation.status === 'ok' ? explanation.data : null);
       if (res.status === 'ok') {
         setRouterDecision(res.data);
       } else {
@@ -196,7 +276,7 @@ export const RoutingStrategiesSection = ({
           text:
             res.status === 'unsupported'
               ? pt
-                ? 'Seleção avançada ai.routes.select respondeu UNSUPPORTED — aguardando integração do motor de decisão (bloco Claude). Abaixo estão os motivos determinísticos de elegibilidade/bloqueio por rota.'
+                ? 'A inspeção de rotas não está disponível nesta instalação.'
                 : res.message
               : res.error.message,
         });
@@ -272,6 +352,121 @@ export const RoutingStrategiesSection = ({
             ))}
           </ul>
         </Banner>
+      </div>
+
+      <div className="db-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <h3 className="db-section-title">
+          {pt ? 'Fatos de privacidade verificados por provedor' : 'Verified provider privacy facts'}
+        </h3>
+        <DataTable
+          columns={[
+            { key: 'provider', header: pt ? 'Provedor' : 'Provider', render: (p) => p.providerId },
+            {
+              key: 'training',
+              header: pt ? 'Treinamento' : 'Training',
+              render: (p) => p.trainingOnInputs,
+            },
+            { key: 'retention', header: pt ? 'Retenção' : 'Retention', render: (p) => p.retention },
+            { key: 'source', header: pt ? 'Fonte' : 'Source', render: (p) => p.sourceUrl ?? '—' },
+          ]}
+          rows={privacyProfiles}
+          rowKey={(profile) => profile.providerId}
+          emptyMessage={pt ? 'Nenhum fato verificado.' : 'No verified facts.'}
+        />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 8,
+          }}
+        >
+          <Field label={pt ? 'Provedor' : 'Provider'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={profileProviderId}
+                onChange={(e) => selectProfileProvider(e.target.value)}
+              >
+                <option value="">{pt ? 'Selecione' : 'Select'}</option>
+                {snapshot.catalog.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label={pt ? 'Uso para treinamento' : 'Training on inputs'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={profileTraining}
+                onChange={(e) => setProfileTraining(e.target.value as typeof profileTraining)}
+              >
+                <option value="unknown">{pt ? 'Desconhecido' : 'Unknown'}</option>
+                <option value="no">{pt ? 'Não' : 'No'}</option>
+                <option value="opt-out">Opt-out</option>
+                <option value="yes">{pt ? 'Sim' : 'Yes'}</option>
+              </Select>
+            )}
+          </Field>
+          <Field label={pt ? 'Retenção' : 'Retention'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={profileRetention}
+                onChange={(e) => setProfileRetention(e.target.value as typeof profileRetention)}
+              >
+                <option value="unknown">{pt ? 'Desconhecida' : 'Unknown'}</option>
+                <option value="none">{pt ? 'Nenhuma' : 'None'}</option>
+                <option value="limited">{pt ? 'Limitada' : 'Limited'}</option>
+                <option value="indefinite">{pt ? 'Indefinida' : 'Indefinite'}</option>
+              </Select>
+            )}
+          </Field>
+          <Field label={pt ? 'Uso comercial' : 'Commercial use'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={profileCommercial}
+                onChange={(e) => setProfileCommercial(e.target.value as typeof profileCommercial)}
+              >
+                <option value="unknown">{pt ? 'Desconhecido' : 'Unknown'}</option>
+                <option value="allowed">{pt ? 'Permitido' : 'Allowed'}</option>
+                <option value="restricted">{pt ? 'Restrito' : 'Restricted'}</option>
+              </Select>
+            )}
+          </Field>
+        </div>
+        <Field label={pt ? 'URL oficial que comprova os fatos' : 'Official supporting URL'}>
+          {(props) => (
+            <Input
+              {...props}
+              value={profileSourceUrl}
+              onChange={(e) => setProfileSourceUrl(e.target.value)}
+              placeholder="https://..."
+            />
+          )}
+        </Field>
+        <Checkbox
+          checked={profileConfirmed}
+          onChange={(e) => setProfileConfirmed(e.target.checked)}
+          label={
+            pt
+              ? 'Li a fonte e confirmei os fatos informados.'
+              : 'I read the source and verified these facts.'
+          }
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={
+            !profileProviderId || !profileConfirmed || !/^https:\/\//i.test(profileSourceUrl)
+          }
+          onClick={() => void handleSavePrivacyProfile()}
+        >
+          {pt ? 'Salvar fatos verificados' : 'Save verified facts'}
+        </Button>
       </div>
 
       {/* Execution Strategy Presets (§11) */}
@@ -547,6 +742,7 @@ export const RoutingStrategiesSection = ({
             variant="secondary"
             icon={<Play size={12} />}
             loading={busy}
+            disabled={!activeProjectId}
             onClick={() => void handleSimulateRouter()}
           >
             {pt ? 'Inspecionar decisão do roteador' : 'Explain router decision'}
@@ -563,6 +759,21 @@ export const RoutingStrategiesSection = ({
               candidatas={routerDecision.candidateRouteIds.join(', ')}
             </div>
           </Banner>
+        ) : null}
+        {routerExplanation ? (
+          <div className="db-card" style={{ fontSize: 11 }}>
+            <div className="db-mono">
+              {pt ? 'Rotas classificadas' : 'Ranked routes'}:{' '}
+              {routerExplanation.ranked
+                .map((route) => `${route.routeId} (${route.score})`)
+                .join(', ') || (pt ? 'nenhuma' : 'none')}
+            </div>
+            {routerExplanation.excluded.map((route) => (
+              <div key={route.routeId}>
+                {route.routeId}: {route.reasons.map((reason) => reason.message).join('; ')}
+              </div>
+            ))}
+          </div>
         ) : null}
 
         <DataTable
@@ -726,24 +937,88 @@ export const RoutingStrategiesSection = ({
 
 export interface BenchmarksSectionProps {
   snapshot: AiResourceSnapshot;
+  activeProjectId: string | null;
+  routingPolicyId: string;
   onRecordBenchmark: (result: BenchmarkResult) => void;
   language: AppLanguage;
 }
 
 export const BenchmarksSection = ({
   snapshot,
+  activeProjectId,
+  routingPolicyId,
   onRecordBenchmark,
   language,
 }: BenchmarksSectionProps) => {
   const pt = language === 'pt-BR';
-  const [runtimeId, setRuntimeId] = useState<string>(snapshot.localRuntimes[0]?.id ?? 'ollama');
+  const [runtimeId, setRuntimeId] = useState<string>(snapshot.localRuntimes[0]?.id ?? '');
   const [modelId, setModelId] = useState<string>('');
-  const [authorizePaidOrExternal, setAuthorizePaidOrExternal] = useState(false);
+  const [suites, setSuites] = useState<
+    { id: string; version: string; cases: number; categories: string[] }[]
+  >([]);
+  const [quality, setQuality] = useState<ModelEvidence[]>([]);
+  const [suiteId, setSuiteId] = useState('');
+  const [suiteRouteId, setSuiteRouteId] = useState('');
+  const [confirmSuite, setConfirmSuite] = useState(false);
+  const [latestSuiteRun, setLatestSuiteRun] = useState<BenchmarkRun | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{
     tone: 'info' | 'success' | 'danger';
     text: string;
   } | null>(null);
+  const selectedRuntime = snapshot.localRuntimes.find((runtime) => runtime.id === runtimeId);
+  const canMeasureLocal = selectedRuntime?.kind === 'ollama';
+
+  useEffect(() => {
+    if (!selectedRuntime) setRuntimeId(snapshot.localRuntimes[0]?.id ?? '');
+  }, [selectedRuntime, snapshot.localRuntimes]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      callAiChannel('ai.benchmark.suites', {}),
+      callAiChannel('ai.benchmark.quality', {}),
+    ]).then(([suiteOut, qualityOut]) => {
+      if (!active) return;
+      if (suiteOut.status === 'ok') setSuites(suiteOut.data);
+      if (qualityOut.status === 'ok') setQuality(qualityOut.data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleRunSuite = async () => {
+    if (!activeProjectId || !suiteId || !suiteRouteId || !confirmSuite) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const out = await callAiChannel('ai.benchmark.run', {
+        suiteId,
+        routeId: suiteRouteId,
+        routingPolicyId,
+        projectId: activeProjectId,
+        confirm: true,
+      });
+      if (out.status === 'ok') {
+        setLatestSuiteRun(out.data);
+        setConfirmSuite(false);
+        setFeedback({
+          tone: 'success',
+          text: pt
+            ? `Suíte concluída: ${out.data.results.filter((result) => result.passed).length}/${out.data.results.length} casos aprovados.`
+            : 'Benchmark suite completed.',
+        });
+      } else {
+        setFeedback({
+          tone: 'danger',
+          text: out.status === 'unsupported' ? out.message : out.error.message,
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleRunBenchmark = async () => {
     if (!runtimeId.trim() || !modelId.trim()) return;
@@ -768,7 +1043,7 @@ export const BenchmarksSection = ({
           text:
             res.status === 'unsupported'
               ? pt
-                ? 'Canal ai.local.benchmark respondeu UNSUPPORTED — a suíte de avaliação do laboratório pertence ao bloco Claude e será habilitada na consolidação da Fase 02 (nenhuma nota fictícia é exibida).'
+                ? 'Medição local indisponível neste runtime. As suítes estruturadas abaixo usam a rota configurada no gateway.'
                 : res.message
               : res.error.message,
         });
@@ -834,22 +1109,18 @@ export const BenchmarksSection = ({
             variant="primary"
             icon={<Play size={13} />}
             loading={busy}
-            disabled={!modelId.trim() || (runtimeId !== 'ollama' && !authorizePaidOrExternal)}
+            disabled={!modelId.trim() || !canMeasureLocal}
             onClick={() => void handleRunBenchmark()}
           >
             {pt ? 'Executar benchmark' : 'Run benchmark'}
           </Button>
         </div>
-        {runtimeId !== 'ollama' ? (
-          <Checkbox
-            checked={authorizePaidOrExternal}
-            onChange={(e) => setAuthorizePaidOrExternal(e.target.checked)}
-            label={
-              pt
-                ? 'Autorizo explicitamente a execução manual deste benchmark em endpoint externo/tarifado.'
-                : 'Explicitly authorize manual benchmark on external/paid endpoint.'
-            }
-          />
+        {selectedRuntime && !canMeasureLocal ? (
+          <div className="db-muted" style={{ fontSize: 12 }}>
+            {pt
+              ? 'Medição de desempenho disponível apenas para modelos instalados no Ollama.'
+              : 'Performance measurement is available only for installed Ollama models.'}
+          </div>
         ) : null}
 
         {/* Dimensions defined for Claude benchmark suite */}
@@ -868,6 +1139,99 @@ export const BenchmarksSection = ({
             </Badge>
           ))}
         </div>
+      </div>
+
+      <div className="db-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <h3 className="db-section-title">
+          {pt ? 'Suítes de avaliação estruturada' : 'Structured evaluation suites'}
+        </h3>
+        <div style={{ fontSize: 12 }} className="db-muted">
+          {pt
+            ? 'Cada caso faz inferência real pela rota e pode consumir cota ou gerar custo. A política do projeto é aplicada no gateway.'
+            : 'Each case calls the selected route and may consume quota or incur cost. Project policy applies.'}
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+            gap: 8,
+          }}
+        >
+          <Field label={pt ? 'Suíte' : 'Suite'}>
+            {(props) => (
+              <Select {...props} value={suiteId} onChange={(e) => setSuiteId(e.target.value)}>
+                <option value="">{pt ? 'Selecione' : 'Select'}</option>
+                {suites.map((suite) => (
+                  <option key={suite.id} value={suite.id}>
+                    {suite.id}@{suite.version} ({suite.cases} {pt ? 'casos' : 'cases'})
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label={pt ? 'Rota' : 'Route'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={suiteRouteId}
+                onChange={(e) => setSuiteRouteId(e.target.value)}
+              >
+                <option value="">{pt ? 'Selecione' : 'Select'}</option>
+                {snapshot.routes
+                  .filter((route) => route.enabled)
+                  .map((route) => (
+                    <option key={route.id} value={route.id}>
+                      {route.id}
+                    </option>
+                  ))}
+              </Select>
+            )}
+          </Field>
+        </div>
+        <Checkbox
+          checked={confirmSuite}
+          onChange={(e) => setConfirmSuite(e.target.checked)}
+          label={
+            pt
+              ? 'Autorizo esta execução e o consumo da rota selecionada.'
+              : 'I authorize this run and its route usage.'
+          }
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={busy}
+          disabled={!activeProjectId || !suiteId || !suiteRouteId || !confirmSuite}
+          onClick={() => void handleRunSuite()}
+        >
+          {pt ? 'Executar suíte' : 'Run suite'}
+        </Button>
+        {latestSuiteRun ? (
+          <div className="db-mono" style={{ fontSize: 11 }}>
+            {latestSuiteRun.suiteId}@{latestSuiteRun.suiteVersion}:{' '}
+            {latestSuiteRun.results.filter((result) => result.passed).length}/
+            {latestSuiteRun.results.length} {pt ? 'casos aprovados' : 'cases passed'}
+          </div>
+        ) : null}
+        <DataTable
+          columns={[
+            { key: 'model', header: pt ? 'Modelo' : 'Model', render: (entry) => entry.modelId },
+            {
+              key: 'samples',
+              header: pt ? 'Amostras' : 'Samples',
+              render: (entry) => entry.samples,
+            },
+            {
+              key: 'confidence',
+              header: pt ? 'Confiança' : 'Confidence',
+              render: (entry) => entry.confidence,
+            },
+            { key: 'source', header: pt ? 'Origem' : 'Source', render: (entry) => entry.source },
+          ]}
+          rows={quality}
+          rowKey={(entry) => entry.modelId}
+          emptyMessage={pt ? 'Sem medições de qualidade.' : 'No quality measurements.'}
+        />
       </div>
 
       <DataTable
@@ -946,8 +1310,10 @@ export const BenchmarksSection = ({
 export interface DiagnosticsSectionProps {
   snapshot: AiResourceSnapshot;
   sessions: readonly AgentSession[];
+  activeProjectId: string | null;
   activeInferenceStream: string;
   activeInferenceRequestId: string | null;
+  lastInferenceCost: CostRecord | null;
   onSubmitDiagInference: (prompt: string, policyId: string) => Promise<void>;
   onCancelDiagInference: () => Promise<void>;
   onRefreshAll: () => Promise<void>;
@@ -957,8 +1323,10 @@ export interface DiagnosticsSectionProps {
 export const DiagnosticsSection = ({
   snapshot,
   sessions,
+  activeProjectId,
   activeInferenceStream,
   activeInferenceRequestId,
+  lastInferenceCost,
   onSubmitDiagInference,
   onCancelDiagInference,
   onRefreshAll,
@@ -971,6 +1339,7 @@ export const DiagnosticsSection = ({
   const [inspectedAttempts, setInspectedAttempts] = useState<FallbackAttempt[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>(sessions[0]?.id ?? '');
   const [latestTaskCheckpoint, setLatestTaskCheckpoint] = useState<TaskCheckpoint | null>(null);
+  const [handoffPacket, setHandoffPacket] = useState<HandoffPacket | null>(null);
 
   const [importSourceId, setImportSourceId] = useState('models-dev');
   const [importJson, setImportJson] = useState('');
@@ -1010,6 +1379,20 @@ export const DiagnosticsSection = ({
             : res.error.message,
       });
     }
+  };
+
+  const handleBuildHandoff = async () => {
+    if (!selectedSessionId || !sessions.some((session) => session.id === selectedSessionId)) return;
+    const out = await callAiChannel('ai.handoff.build', {
+      sessionId: selectedSessionId,
+      kind: 'session-continuation',
+    });
+    if (out.status === 'ok') setHandoffPacket(out.data);
+    else
+      setFeedback({
+        tone: 'info',
+        text: out.status === 'unsupported' ? out.message : out.error.message,
+      });
   };
 
   const handleImportCatalog = async () => {
@@ -1078,6 +1461,13 @@ export const DiagnosticsSection = ({
             ? 'Console de diagnóstico de inferência e streaming (ai.inference.*)'
             : 'Gateway inference & streaming diagnostic console'}
         </h3>
+        {!activeProjectId ? (
+          <Banner tone="info">
+            {pt
+              ? 'Selecione um projeto para aplicar sua política de privacidade à inferência.'
+              : 'Select a project to apply its privacy policy to inference.'}
+          </Banner>
+        ) : null}
         <div
           style={{
             display: 'grid',
@@ -1109,7 +1499,7 @@ export const DiagnosticsSection = ({
             size="sm"
             variant="primary"
             icon={<Play size={12} />}
-            disabled={Boolean(activeInferenceRequestId) || !diagPrompt.trim()}
+            disabled={Boolean(activeInferenceRequestId) || !activeProjectId || !diagPrompt.trim()}
             onClick={() => void onSubmitDiagInference(diagPrompt.trim(), diagPolicyId.trim())}
           >
             {pt ? 'Testar rota' : 'Test route'}
@@ -1131,6 +1521,16 @@ export const DiagnosticsSection = ({
             text={activeInferenceStream}
             maxHeight={160}
           />
+        ) : null}
+        {lastInferenceCost ? (
+          <div className="db-mono" style={{ fontSize: 11 }}>
+            {pt ? 'Custo da última inferência' : 'Last inference cost'}: {lastInferenceCost.state}{' '}
+            {lastInferenceCost.reconciledMicros === null
+              ? pt
+                ? '(valor desconhecido)'
+                : '(amount unknown)'
+              : `${lastInferenceCost.currency} ${(lastInferenceCost.reconciledMicros / 1_000_000).toFixed(6)}`}
+          </div>
         ) : null}
       </div>
 
@@ -1184,12 +1584,38 @@ export const DiagnosticsSection = ({
             >
               {pt ? 'Inspecionar' : 'Inspect'}
             </Button>
+            <Button
+              size="xs"
+              variant="secondary"
+              disabled={!selectedSessionId}
+              onClick={() => void handleBuildHandoff()}
+            >
+              {pt ? 'Preparar handoff' : 'Build handoff'}
+            </Button>
           </div>
           {latestTaskCheckpoint ? (
             <UntrustedBlock
               label={`${latestTaskCheckpoint.id} (${latestTaskCheckpoint.state})`}
               text={latestTaskCheckpoint.summary}
               maxHeight={120}
+            />
+          ) : null}
+          {handoffPacket ? (
+            <UntrustedBlock
+              label={`${pt ? 'Handoff de' : 'Handoff from'} ${handoffPacket.sessionId ?? ''}`}
+              text={JSON.stringify(
+                {
+                  branch: handoffPacket.branch,
+                  baseCommit: handoffPacket.baseCommit,
+                  filesTouched: handoffPacket.filesTouched,
+                  tests: handoffPacket.tests,
+                  pending: handoffPacket.pending,
+                  reconciliationRequired: handoffPacket.reconciliationRequired,
+                },
+                null,
+                2,
+              )}
+              maxHeight={200}
             />
           ) : null}
         </div>

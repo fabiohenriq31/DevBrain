@@ -74,7 +74,7 @@ export const DiffViewer = ({
 
   if (!gitStatus) {
     return (
-      <div style={{ padding: 14 }}>
+      <div style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: 14 }}>
         <EmptyState
           icon={<FileDiff size={24} />}
           title={pt ? 'Workspace sem repositório Git' : 'Not a Git repository'}
@@ -98,14 +98,19 @@ export const DiffViewer = ({
 
   return (
     <div
+      data-scroll-region="diff-viewer"
       style={{
         display: 'flex',
         flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
         height: '100%',
+        minWidth: 0,
         minHeight: 0,
         gap: 10,
         padding: 12,
-        overflow: 'auto',
+        overflowY: 'auto',
+        overflowX: 'hidden',
       }}
     >
       <div
@@ -115,6 +120,7 @@ export const DiffViewer = ({
           justifyContent: 'space-between',
           gap: 10,
           flexWrap: 'wrap',
+          flexShrink: 0,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -245,7 +251,10 @@ export const DiffViewer = ({
                 </Badge>
               </div>
             </div>
-            <div style={{ overflowX: 'auto', padding: '4px 0' }}>
+            <div
+              data-scroll-region="diff-file-code"
+              style={{ overflowX: 'auto', width: '100%', padding: '4px 0' }}
+            >
               {file.lines.map((ln, idx) => (
                 <div
                   key={idx}

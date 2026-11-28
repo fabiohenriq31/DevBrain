@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import * as C from './entities/core.js';
 import * as R from './entities/ai-resource.js';
+import * as I from './entities/intelligence.js';
 import { AgentSchema } from './entities/agent.js';
 import {
   CheckpointSchema,
@@ -432,6 +433,11 @@ export const IPC_CHANNELS = {
     R.ModelAvailabilitySchema,
     'Validate a configured connection.',
   ),
+  'ai.connections.discover': channel(
+    z.object({ id: R.AiResourceIdSchema }),
+    R.ConnectionDiscoverySchema,
+    'Authenticate a configured connection and list models without inference or a route.',
+  ),
   'ai.models.list': channel(
     z.object({ connectionId: R.AiResourceIdSchema.optional() }),
     z.array(R.ModelDefinitionSchema),
@@ -444,6 +450,17 @@ export const IPC_CHANNELS = {
   ),
   'ai.routes.list': channel(Empty, z.array(R.ModelRouteSchema), 'Configured model routes.'),
   'ai.routes.save': channel(R.ModelRouteSchema, R.ModelRouteSchema, 'Save a model route.'),
+  'ai.policies.list': channel(
+    Empty,
+    z.array(
+      z.object({
+        policy: R.RoutingPolicySchema,
+        billing: R.BillingPolicySchema,
+        privacy: R.PrivacyPolicySchema,
+      }),
+    ),
+    'Configured routing strategies (for choosing how a gateway agent routes).',
+  ),
   'ai.policies.configure': channel(
     z.object({
       policy: R.RoutingPolicySchema,
@@ -546,6 +563,88 @@ export const IPC_CHANNELS = {
     z.object({ sessionId: SessionIdSchema }),
     R.TaskCheckpointSchema.nullable(),
     'Latest task checkpoint.',
+  ),
+  // ---- 0.7.0: intelligence (policies enforced in the main process) -----------
+  'ai.projectPolicy.get': channel(
+    z.object({ projectId: ProjectIdSchema }),
+    I.ProjectAiPolicySchema,
+    'Privacy class and budget of a project (defaults when never configured).',
+  ),
+  'ai.projectPolicy.save': channel(
+    I.ProjectAiPolicySchema.omit({ updatedAt: true }),
+    I.ProjectAiPolicySchema,
+    'Save a project AI policy (privacy class, approved providers, budget).',
+  ),
+  'ai.privacyProfiles.list': channel(
+    Empty,
+    z.array(I.ProviderPrivacyProfileSchema),
+    'Verified data-handling facts per provider (unknown when not verified).',
+  ),
+  'ai.privacyProfiles.save': channel(
+    I.ProviderPrivacyProfileSchema,
+    I.ProviderPrivacyProfileSchema,
+    'Record verified data-handling facts for a provider (user-verified).',
+  ),
+  'ai.routes.explain': channel(
+    R.InferenceRequestSchema,
+    I.ExplainedRoutingDecisionSchema,
+    'Dry-run routing: ranked candidates, scores and exclusion reasons. Reserves nothing.',
+  ),
+  'ai.cost.get': channel(
+    z.object({ requestId: R.AiResourceIdSchema }),
+    I.CostRecordSchema.nullable(),
+    'Estimated, reconciled, reported or unknown cost of an inference.',
+  ),
+  'ai.budget.status': channel(
+    z.object({ projectId: ProjectIdSchema.optional(), sessionId: SessionIdSchema.optional() }),
+    z.array(I.BudgetStatusSchema),
+    'DevBrain-enforced budget state (global, project, session).',
+  ),
+  'ai.quota.forecast': channel(
+    z.object({ quotaId: R.AiResourceIdSchema }),
+    I.QuotaForecastSchema,
+    'Quota reset and exhaustion forecast; estimates are labelled as such.',
+  ),
+  'ai.benchmark.suites': channel(
+    Empty,
+    z.array(
+      z.object({
+        id: R.AiResourceIdSchema,
+        version: z.string(),
+        cases: z.number().int().nonnegative(),
+        categories: z.array(I.BenchmarkCategorySchema),
+      }),
+    ),
+    'Versioned benchmark suites.',
+  ),
+  'ai.benchmark.run': channel(
+    z.object({
+      suiteId: R.AiResourceIdSchema,
+      routeId: R.AiResourceIdSchema,
+      routingPolicyId: R.AiResourceIdSchema,
+      projectId: ProjectIdSchema.optional(),
+      confirm: z.literal(true),
+    }),
+    I.BenchmarkRunSchema,
+    'Run a suite against one route through the policy-enforcing gateway.',
+  ),
+  'ai.benchmark.quality': channel(
+    z.object({ modelId: R.AiResourceIdSchema.optional() }),
+    z.array(I.ModelEvidenceSchema),
+    'Measured quality per model (read-only, computed in main) with sample sizes.',
+  ),
+  'ai.context.preview': channel(
+    z.object({
+      messages: z.array(R.InferenceMessageSchema).min(1).max(2000),
+      budgetTokens: z.number().int().min(256).max(10_000_000),
+    }),
+    I.ContextOptimizationReportSchema,
+    'Preview context optimization (nothing is sent anywhere).',
+  ),
+  'ai.handoff.build': channel(
+    z.object({ sessionId: SessionIdSchema, kind: I.HandoffKindSchema }),
+    I.HandoffPacketSchema,
+    'Structured handoff packet from the latest session checkpoint and history.',
   ),
 } as const satisfies Record<string, ChannelDefinition>;
 

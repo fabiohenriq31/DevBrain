@@ -2,8 +2,10 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, Menu, app } from 'electron';
 import { ipcEventName } from '@devbrain/contracts';
+import { OllamaRuntime, OpenAiLocalRuntime, ProviderCatalog } from '@devbrain/ai-gateway';
 import { OperationalExecutionService } from '@devbrain/execution-engine';
 import { startCore, type StartedCore } from './core.js';
+import { createGatewayForCore } from './gateway.js';
 import { registerIpc } from './ipc.js';
 import { applyProcessHardening, hardenSession, hardenWebContents } from './security.js';
 
@@ -23,8 +25,8 @@ const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     width: 1400,
     height: 860,
-    minWidth: 1024,
-    minHeight: 640,
+    minWidth: 760,
+    minHeight: 480,
     show: false,
     title: 'DevBrain AI',
     autoHideMenuBar: true,
@@ -78,13 +80,28 @@ void app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   hardenSession();
   started = startCore();
-  engine = started.core ? new OperationalExecutionService(started.core) : null;
+  const core = started.core;
+  const gateway = core ? createGatewayForCore(core) : null;
+  // The native DevBrain agent runs its model calls through this same gateway instance.
+  engine = core ? new OperationalExecutionService(core, undefined, gateway) : null;
   engine?.subscribe((event) => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(ipcEventName('execution.event'), event);
     }
   });
-  registerIpc({ core: started.core, engine, devServerUrl });
+  const catalog = core ? new ProviderCatalog(core.db.driver) : null;
+  registerIpc({
+    core,
+    engine,
+    gateway,
+    catalog,
+    localRuntime: new OllamaRuntime(),
+    localRuntimes: [
+      new OpenAiLocalRuntime('custom', 'http://127.0.0.1:1234/v1'),
+      new OpenAiLocalRuntime('llama-cpp', 'http://127.0.0.1:9931/v1'),
+    ],
+    devServerUrl,
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

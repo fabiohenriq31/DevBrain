@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { basename, delimiter, extname, isAbsolute, join, relative } from 'node:path';
-import { access, realpath, stat } from 'node:fs/promises';
+import { relative } from 'node:path';
 import {
+  CheckpointStateV1Schema,
   DevBrainError,
+  ProjectAiPolicySchema,
   EXECUTION_TRANSITIONS,
   SubmitExecutionInputSchema,
   newId,
@@ -23,74 +24,20 @@ import type { CoreServices } from '@devbrain/core';
 import { isWithinRoot, redactString } from '@devbrain/security';
 import { createBuiltinRegistry, type ProviderRegistry } from '@devbrain/provider-sdk';
 import { LocalGitService } from '@devbrain/git-engine';
+import { envFor, findExecutable, killTree } from './process.js';
+import { runGatewayAgent, type GatewayAgentClient } from './agent-runtime.js';
 
-const executableName = (name: string): string =>
-  name.toLowerCase().replace(/\.(exe|cmd|bat)$/i, '');
-const allowedExecutable = (name: string): boolean =>
-  !/[\0\r\n]/.test(name) &&
-  !['cmd', 'powershell', 'pwsh', 'bash', 'sh', 'wscript', 'cscript'].includes(
-    executableName(basename(name)),
-  );
-const envFor = (names: readonly string[]): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = {};
-  for (const key of new Set([
-    'PATH',
-    'Path',
-    'PATHEXT',
-    'SYSTEMROOT',
-    'SystemRoot',
-    'TEMP',
-    'TMP',
-    'HOME',
-    'USERPROFILE',
-    'APPDATA',
-    ...names,
-  ])) {
-    if (process.env[key] !== undefined) env[key] = process.env[key];
-  }
-  return env;
-};
-export const findExecutable = async (name: string): Promise<string | null> => {
-  if (!allowedExecutable(name)) return null;
-  const candidates = isAbsolute(name)
-    ? [name]
-    : (process.env.PATH ?? '')
-        .split(delimiter)
-        .flatMap((dir) =>
-          process.platform === 'win32'
-            ? [join(dir, name + '.exe'), join(dir, name)]
-            : [join(dir, name)],
-        );
-  for (const candidate of candidates) {
-    try {
-      if (process.platform === 'win32' && extname(candidate).toLowerCase() !== '.exe') continue;
-      if ((await stat(candidate)).isFile()) {
-        await access(candidate);
-        return await realpath(candidate);
-      }
-    } catch {
-      /* try next PATH entry */
-    }
-  }
-  return null;
-};
-const killTree = async (child: ChildProcess, force: boolean): Promise<void> => {
-  if (!child.pid || child.exitCode !== null) return;
-  if (process.platform === 'win32') {
-    const killer = spawn(
-      'taskkill.exe',
-      ['/PID', String(child.pid), '/T', ...(force ? ['/F'] : [])],
-      { shell: false, windowsHide: true },
-    );
-    await once(killer, 'exit').catch(() => undefined);
-  } else {
-    try {
-      process.kill(-child.pid, force ? 'SIGKILL' : 'SIGTERM');
-    } catch {
-      child.kill(force ? 'SIGKILL' : 'SIGTERM');
-    }
-  }
-};
+/** Adapter key of the native DevBrain agent that runs on the AI gateway. */
+export const DEVBRAIN_AGENT_KEY = 'devbrain-agent';
+
+export { findExecutable } from './process.js';
+export {
+  runGatewayAgent,
+  AGENT_TOOLS,
+  type GatewayAgentClient,
+  type GatewayAgentRun,
+} from './agent-runtime.js';
+
 /**
  * Command line for a prompt to a supported agent CLI, from each vendor's official CLI docs
  * (see the adapter descriptors' `documentationUrl`).
@@ -148,6 +95,20 @@ export const buildAgentCommand = (
           `--print=${prompt}`,
         ],
       };
+    case 'opencode-cli':
+      return {
+        executable: 'opencode',
+        args: [
+          'run',
+          '--standalone',
+          '--format',
+          'json',
+          '--agent',
+          options.readOnly ? 'plan' : 'build',
+          // A safe prefix prevents an untrusted prompt beginning with `--` from becoming a flag.
+          `User request:\n${prompt}`,
+        ],
+      };
     default:
       throw new DevBrainError('UNSUPPORTED', 'Adapter does not support prompt execution');
   }
@@ -166,6 +127,9 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
   constructor(
     private readonly core: CoreServices,
     private readonly registry: ProviderRegistry = createBuiltinRegistry(),
+    /** Model client for `devbrain-agent` (the AI gateway). Absent → that agent is unavailable. */
+    private readonly gateway:
+      (GatewayAgentClient & { freeOnly?(policyId: string): boolean }) | null = null,
   ) {}
 
   async listAdapters() {
@@ -268,6 +232,32 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
       const provider = this.core.db.providers.findById(agent.providerId)?.provider;
       if (!provider) throw new DevBrainError('NOT_FOUND', 'Provider not found');
       if (request.payload.kind === 'prompt') {
+        const row = this.core.db.driver.get<{ data: string }>(
+          'SELECT data FROM ai_project_policies WHERE project_id=:id',
+          { id: session.projectId },
+        );
+        const projectPolicy = ProjectAiPolicySchema.parse(
+          row ? JSON.parse(row.data) : { projectId: session.projectId, updatedAt: nowTimestamp() },
+        );
+        // CLI processes can use their own accounts and network path. Gateway quota, budget and
+        // privacy policies cannot be claimed for them until a verified gateway binding exists.
+        // The native gateway agent is exempt: every model call it makes is routed through the
+        // gateway, which enforces project privacy (restricted → local routes only) and budget.
+        if (
+          (provider.adapterKey !== DEVBRAIN_AGENT_KEY &&
+            projectPolicy.privacyClass === 'restricted') ||
+          (provider.adapterKey === 'opencode-cli' &&
+            (projectPolicy.privacyClass !== 'public' ||
+              !projectPolicy.budget.allowPaid ||
+              !projectPolicy.budget.allowUnboundedCost))
+        ) {
+          throw new DevBrainError(
+            'PERMISSION_DENIED',
+            'This CLI is not bound to the AI gateway; project privacy or budget policy blocks execution',
+          );
+        }
+      }
+      if (request.payload.kind === 'prompt') {
         const adapter = this.registry.get(provider.adapterKey);
         const dependency = await adapter.checkDependencies();
         await this.core.providers.recordEvidence({
@@ -279,18 +269,122 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
         });
         if (dependency.status !== 'available')
           throw new DevBrainError('DEPENDENCY_MISSING', 'Agent CLI unavailable');
+        if (provider.adapterKey === DEVBRAIN_AGENT_KEY) {
+          if (!this.gateway)
+            throw new DevBrainError('DEPENDENCY_MISSING', 'AI gateway is not available');
+          if (!request.payload.gateway)
+            throw new DevBrainError(
+              'VALIDATION_FAILED',
+              'A routing policy is required to run the DevBrain agent',
+            );
+        }
       }
+      const gatewayOptions =
+        request.payload.kind === 'prompt' && provider.adapterKey === DEVBRAIN_AGENT_KEY
+          ? (request.payload.gateway ?? null)
+          : null;
       const auth = await this.core.authorization.authorizeExecution(
         {
           sessionId: session.id,
           workingDirectory: request.workingDirectory,
-          costBearing: request.payload.kind === 'prompt',
+          // A gateway agent whose routing policy can only reach free/local routes carries no
+          // provider cost; otherwise the Core budget rules apply as for any paid agent.
+          costBearing:
+            request.payload.kind === 'prompt' &&
+            !(gatewayOptions && this.gateway?.freeOnly?.(gatewayOptions.routingPolicyId) === true),
         },
         { signal: active.abort.signal },
       );
       release = await this.core.authorization.acquireSlot(agent.id, active.abort.signal);
       if (active.abort.signal.aborted)
         throw new DevBrainError('CANCELLED', 'Cancelled while queued');
+      if (gatewayOptions && this.gateway && request.payload.kind === 'prompt') {
+        startedAt = nowTimestamp();
+        await transition('running');
+        const previous = await this.core.db.checkpoints
+          .latestForSession(session.id)
+          .catch(() => null);
+        const prior = CheckpointStateV1Schema.safeParse(previous?.state);
+        const run = await runGatewayAgent({
+          core: this.core,
+          client: this.gateway,
+          git: this.git,
+          agentId: agent.id,
+          workspaceId: session.workspaceId,
+          sessionId: session.id,
+          projectId: session.projectId,
+          executionId: request.id,
+          root: auth.workingDirectory,
+          prompt: request.payload.prompt,
+          contextFiles: request.payload.contextFiles,
+          options: {
+            ...gatewayOptions,
+            maxDurationMs: Math.min(
+              gatewayOptions.maxDurationMs,
+              request.timeoutMs,
+              auth.limits.maxExecutionMs,
+            ),
+          },
+          previous: prior.success
+            ? {
+                summary: prior.data.summary,
+                log: prior.data.plan,
+                nextSteps: prior.data.nextSteps,
+              }
+            : null,
+          signal: active.abort.signal,
+          emit,
+        });
+        const status: ExecutionStatus = run.status;
+        if (status === 'cancelled') await transition('interrupting');
+        await transition(status);
+        const result: ExecutionResult = {
+          executionId: request.id,
+          sessionId: request.sessionId,
+          status: run.status,
+          exitCode: null,
+          startedAt,
+          finishedAt: nowTimestamp(),
+          summary: run.summary.slice(0, 2000),
+          usage: run.usage,
+          error: run.error?.toPayload() ?? null,
+          outputTruncated,
+        };
+        await this.core.sessions.recordResult(result);
+        await this.core.sessions
+          .saveCheckpoint({
+            sessionId: session.id,
+            label: `Gateway agent ${status}`,
+            gitCommit:
+              (await this.git.detect(auth.workingDirectory).catch(() => null))?.headCommit ?? null,
+            state: {
+              version: 1,
+              task: request.payload.prompt.slice(0, 20_000),
+              plan: run.log.slice(-200).map((line) => line.slice(0, 2000)),
+              summary: run.summary,
+              filesTouched: run.filesTouched.slice(0, 5000),
+              nextSteps: run.unknownOutcomes
+                .slice(0, 200)
+                .map((u) => `Verify the outcome of: ${u}`.slice(0, 2000)),
+              providerRef: null,
+              lastExecutionId: request.id,
+            },
+          })
+          .catch(() => undefined);
+        if (status === 'completed')
+          await this.core.providers
+            .recordEvidence({
+              providerId: provider.id,
+              aspect: 'operational',
+              state: 'yes',
+              detail: `Completed gateway agent execution (${run.modelsUsed.join(', ')})`.slice(
+                0,
+                500,
+              ),
+            })
+            .catch(() => undefined);
+        return result;
+      }
       const { executable, args } =
         request.payload.kind === 'prompt'
           ? buildAgentCommand(provider.adapterKey, request.payload.prompt, {
@@ -348,6 +442,19 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
           terminalSignal = 'success';
         if (value.type === 'turn.failed' || (value.type === 'result' && value.is_error === true))
           terminalSignal = 'failure';
+        if (provider.adapterKey === 'opencode-cli') {
+          if (value.type === 'error') terminalSignal = 'failure';
+          const part =
+            value.part && typeof value.part === 'object'
+              ? (value.part as Record<string, unknown>)
+              : null;
+          if (part?.type === 'text' && typeof part.text === 'string')
+            await emit({
+              type: 'message',
+              role: 'assistant',
+              text: redactString(part.text).slice(0, 1_048_576),
+            });
+        }
         const item =
           value.item && typeof value.item === 'object'
             ? (value.item as Record<string, unknown>)
@@ -512,7 +619,10 @@ export class OperationalExecutionService implements ExecutionService, AgentDisco
                     : 'modified',
             });
         }
-      const validSuccess = request.payload.kind === 'command' || terminalSignal === 'success';
+      const validSuccess =
+        request.payload.kind === 'command' ||
+        terminalSignal === 'success' ||
+        (provider.adapterKey === 'opencode-cli' && terminalSignal !== 'failure');
       const status: ExecutionStatus = timedOut
         ? 'timed-out'
         : active.abort.signal.aborted

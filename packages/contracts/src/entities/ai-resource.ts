@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { CredentialIdSchema, SessionIdSchema, TimestampSchema } from '../common.js';
+import {
+  CredentialIdSchema,
+  ProjectIdSchema,
+  SessionIdSchema,
+  TimestampSchema,
+} from '../common.js';
+import { TaskProfileSchema } from './task.js';
 
 // Phase 02 wire contracts. Unknown commercial terms remain null until verified.
 const Id = z.string().regex(/^[a-z0-9][a-z0-9._:-]{1,127}$/);
@@ -82,6 +88,21 @@ export const PricingDefinitionSchema = z.object({
   cachedInputPerMillion: NonNegative.nullable(),
   verifiedAt: TimestampSchema.nullable(),
   sourceUrl: SafeUrl.nullable(),
+  /**
+   * @since 0.7.0 — prices that apply when the prompt exceeds `aboveInputTokens` (long-context
+   * tiers). The highest matching tier wins; absent = flat pricing.
+   */
+  contextTiers: z
+    .array(
+      z.object({
+        aboveInputTokens: PositiveInt,
+        inputPerMillion: NonNegative,
+        outputPerMillion: NonNegative,
+        cachedInputPerMillion: NonNegative.nullable(),
+      }),
+    )
+    .max(8)
+    .optional(),
 });
 export type PricingDefinition = z.infer<typeof PricingDefinitionSchema>;
 
@@ -97,6 +118,27 @@ export const ModelDefinitionSchema = z.object({
   verifiedAt: TimestampSchema.nullable(),
 });
 export type ModelDefinition = z.infer<typeof ModelDefinitionSchema>;
+
+/** Metadata returned by an authenticated provider model listing; null means unverified. */
+export const DiscoveredProviderModelSchema = z.object({
+  upstreamModelId: z.string().min(1).max(300),
+  name: z.string().min(1).max(300),
+  tools: z.boolean().nullable(),
+  contextTokens: PositiveInt.nullable(),
+  outputTokens: PositiveInt.nullable(),
+  pricing: PricingDefinitionSchema.nullable(),
+  sourceUrl: SafeUrl,
+  observedAt: TimestampSchema,
+});
+export type DiscoveredProviderModel = z.infer<typeof DiscoveredProviderModelSchema>;
+
+export const ConnectionDiscoverySchema = z.object({
+  connectionId: Id,
+  authenticated: z.boolean(),
+  models: z.array(DiscoveredProviderModelSchema).max(1000),
+  observedAt: TimestampSchema,
+});
+export type ConnectionDiscovery = z.infer<typeof ConnectionDiscoverySchema>;
 
 export const ModelAvailabilitySchema = z.object({
   modelId: Id,
@@ -124,6 +166,10 @@ export const ModelRouteSchema = z.object({
 export type ModelRoute = z.infer<typeof ModelRouteSchema>;
 
 export const QuotaScopeSchema = z.enum([
+  /** @since 0.7.0 — DevBrain-wide limit (e.g. the global budget). */
+  'global',
+  /** @since 0.7.0 — one agent/inference session. */
+  'session',
   'account',
   'organization',
   'credential',
@@ -152,6 +198,12 @@ export const QuotaDefinitionSchema = z.object({
   periodSeconds: PositiveInt.nullable(),
   sourceUrl: SafeUrl.nullable(),
   verifiedAt: TimestampSchema.nullable(),
+  /**
+   * @since 0.7.0 — who imposes the limit. `provider`: published or observed provider limit
+   * (enforced by the provider; DevBrain only tracks it). `devbrain`: a limit DevBrain itself
+   * enforces before dispatch. Missing = `provider`. `currency` amounts are integer micro-units.
+   */
+  origin: z.enum(['provider', 'devbrain']).optional(),
 });
 export type QuotaDefinition = z.infer<typeof QuotaDefinitionSchema>;
 export const QuotaObservationSchema = z.object({
@@ -218,6 +270,24 @@ export const RoutingPolicySchema = z.object({
   privacyPolicyId: Id,
   maxAttempts: PositiveInt.max(10),
   requireTools: z.boolean(),
+  /** @since 0.7.0 — intelligent routing preset; missing = derived from `strategy`. */
+  preset: z
+    .enum(['free-only', 'local-only', 'economy', 'balanced', 'quality', 'custom'])
+    .optional(),
+  /** @since 0.7.0 — weights for `custom` (0..1 each); ignored by other presets. */
+  weights: z
+    .object({
+      quality: NonNegative.max(1),
+      cost: NonNegative.max(1),
+      latency: NonNegative.max(1),
+      reliability: NonNegative.max(1),
+      quota: NonNegative.max(1),
+      continuity: NonNegative.max(1),
+    })
+    .partial()
+    .optional(),
+  /** @since 0.7.0 — evidence-based exploration among already-eligible free/local routes. */
+  allowExploration: z.boolean().optional(),
 });
 export type RoutingPolicy = z.infer<typeof RoutingPolicySchema>;
 export const RoutingDecisionSchema = z.object({
@@ -230,10 +300,57 @@ export const RoutingDecisionSchema = z.object({
 });
 export type RoutingDecision = z.infer<typeof RoutingDecisionSchema>;
 
+// ---- 0.8.0: tool calling. The gateway TRANSPORTS tool calls and results; it never executes
+// tools. Execution happens in an authorized runtime (Core-enforced), never in the HTTP server.
+/** JSON Schema of tool arguments (an object schema). Validated structurally, size-bounded. */
+export const ToolParametersSchema = z
+  .record(z.string(), z.unknown())
+  .refine((s) => JSON.stringify(s).length <= 64_000, 'Tool schema too large');
+export const ToolDefinitionSchema = z.object({
+  name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+  description: z.string().max(4000),
+  parameters: ToolParametersSchema,
+});
+export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
+/** One structured call proposed by a model. `arguments` is the raw JSON text it produced. */
+export const ToolCallSchema = z.object({
+  id: z.string().min(1).max(200),
+  name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+  arguments: z.string().max(400_000),
+});
+export type ToolCall = z.infer<typeof ToolCallSchema>;
+export const ToolChoiceSchema = z.union([
+  z.enum(['auto', 'none', 'required']),
+  z.object({ name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/) }),
+]);
+export type ToolChoice = z.infer<typeof ToolChoiceSchema>;
+/** Execution state of a tool call inside an agent runtime (never inside the gateway). */
+export const ToolCallStateSchema = z.enum([
+  'proposed',
+  'invalid',
+  'denied',
+  'awaiting-approval',
+  'running',
+  'succeeded',
+  'failed',
+  'unknown',
+]);
+export type ToolCallState = z.infer<typeof ToolCallStateSchema>;
+
 export const InferenceMessageSchema = z.object({
   role: z.enum(['system', 'developer', 'user', 'assistant', 'tool']),
   content: z.string().max(2_000_000),
+  /** Tool result: the call it answers (correlation). */
   toolCallId: z.string().optional(),
+  /** @since 0.8.0 — assistant turn: calls the model proposed (parallel calls allowed). */
+  toolCalls: z.array(ToolCallSchema).max(64).optional(),
+  /** @since 0.8.0 — tool result: tool name (required by some protocols, e.g. Gemini). */
+  name: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]{1,64}$/)
+    .optional(),
+  /** @since 0.8.0 — tool result reports an error. */
+  isError: z.boolean().optional(),
 });
 export const InferenceRequestSchema = z.object({
   id: Id,
@@ -246,6 +363,16 @@ export const InferenceRequestSchema = z.object({
   routingPolicyId: Id,
   idempotencyKey: z.string().max(200).nullable(),
   deadlineMs: z.number().int().min(1000).max(600_000).optional(),
+  /** @since 0.7.0 — project whose privacy and budget policies apply (main-process enforced). */
+  projectId: ProjectIdSchema.optional(),
+  /** @since 0.7.0 — what the request is for; drives eligibility and scoring. */
+  task: TaskProfileSchema.optional(),
+  /** @since 0.8.0 — tools the model may call; only tool-capable routes are eligible. */
+  tools: z.array(ToolDefinitionSchema).max(64).optional(),
+  /** @since 0.8.0 */
+  toolChoice: ToolChoiceSchema.optional(),
+  /** @since 0.8.0 — allow several calls in one turn (provider support permitting). */
+  parallelToolCalls: z.boolean().optional(),
 });
 export type InferenceRequest = z.infer<typeof InferenceRequestSchema>;
 export const InferenceErrorSchema = z.object({
@@ -283,6 +410,8 @@ export const InferenceResultSchema = z.object({
   usage: UsageRecordSchema.nullable(),
   attempts: z.array(FallbackAttemptSchema),
   completedAt: TimestampSchema,
+  /** @since 0.8.0 — structured calls proposed by the model (not executed by the gateway). */
+  toolCalls: z.array(ToolCallSchema).max(64).optional(),
 });
 export type InferenceResult = z.infer<typeof InferenceResultSchema>;
 export const InferenceEventSchema = z.discriminatedUnion('type', [
@@ -310,6 +439,16 @@ export const InferenceEventSchema = z.discriminatedUnion('type', [
     seq: z.number().int().nonnegative(),
     error: InferenceErrorSchema,
   }),
+  /** @since 0.8.0 — streamed tool-call fragment; `index` correlates fragments of one call. */
+  z.object({
+    type: z.literal('tool-call-delta'),
+    requestId: Id,
+    seq: z.number().int().nonnegative(),
+    index: z.number().int().nonnegative().max(63),
+    id: z.string().max(200).nullable(),
+    name: z.string().max(64).nullable(),
+    argumentsDelta: z.string().max(400_000),
+  }),
 ]);
 export type InferenceEvent = z.infer<typeof InferenceEventSchema>;
 
@@ -324,7 +463,7 @@ export type LocalRuntime = z.infer<typeof LocalRuntimeSchema>;
 export const LocalModelSchema = z.object({
   id: Id,
   runtimeId: Id,
-  modelId: Id,
+  modelId: z.string().min(1).max(300),
   sizeBytes: z.number().int().nonnegative().nullable(),
   digest: z.string().nullable(),
   installedAt: TimestampSchema.nullable(),

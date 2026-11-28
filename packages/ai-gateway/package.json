@@ -1,0 +1,26 @@
+{
+  "name": "@devbrain/ai-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first AI inference gateway, quota ledger and provider catalog.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@devbrain/contracts": "workspace:*",
+    "@devbrain/database": "workspace:*",
+    "@devbrain/intelligence": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

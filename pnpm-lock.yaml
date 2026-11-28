@@ -37,6 +37,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@devbrain/ai-gateway':
+        specifier: workspace:*
+        version: link:../../packages/ai-gateway
       '@devbrain/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -52,6 +55,9 @@ importers:
       '@devbrain/git-engine':
         specifier: workspace:*
         version: link:../../packages/git-engine
+      '@devbrain/intelligence':
+        specifier: workspace:*
+        version: link:../../packages/intelligence
       '@devbrain/project-engine':
         specifier: workspace:*
         version: link:../../packages/project-engine
@@ -105,6 +111,21 @@ importers:
         specifier: 8.3.8
         version: 8.3.8(@types/node@26.6.6)(jiti@2.7.0)
 
+  packages/ai-gateway:
+    dependencies:
+      '@devbrain/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@devbrain/database':
+        specifier: workspace:*
+        version: link:../database
+      '@devbrain/intelligence':
+        specifier: workspace:*
+        version: link:../intelligence
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+
   packages/contracts:
     dependencies:
       zod:
@@ -155,12 +176,31 @@ importers:
       '@devbrain/security':
         specifier: workspace:*
         version: link:../security
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@devbrain/ai-gateway':
+        specifier: workspace:*
+        version: link:../ai-gateway
 
   packages/git-engine:
     dependencies:
       '@devbrain/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/intelligence:
+    dependencies:
+      '@devbrain/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@devbrain/database':
+        specifier: workspace:*
+        version: link:../database
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/project-engine:
     dependencies:

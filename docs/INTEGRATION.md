@@ -1,5 +1,16 @@
 # Integração
 
+## Consolidação da Fase 02 (2026-11-27)
+
+`phase-02/consolidation` parte da `develop` que contém a UI Antigravity e
+incorpora `phase-02/claude-intelligence` por merge. A branch Claude já contém
+o gateway Codex como ancestral. O Core continua dono de credenciais, sessões,
+projetos e auditoria; o gateway não cria serviços paralelos para essas funções.
+As decisões de privacidade de projeto passam por `ai.projectPolicy.get/save`.
+As receitas específicas ficam em `packages/ai-gateway/src/profiles.ts` e não
+ativam contas ou modelos. O relatório verificável está em
+`docs/PHASE_02_FINAL_REPORT.md`.
+
 ## Branches
 
 | Branch | Uso | Quem faz merge |
@@ -122,6 +133,8 @@ Registre aqui os pedidos de mudança em arquivos de outro dono.
 | 2026-11-27 | A → C | `packages/database/src/repositories/permissions.ts` (`SqlitePermissionGrantRepository.list`): quando `includeInactive === true`, `params` inclui `{ now: filter.now }` sem `:now` na query SQL, fazendo `node:sqlite` lançar erro de parâmetro nomeado desconhecido (`Unexpected storage failure`). A UI usa `includeInactive: false` + `audit.list` até correção pelo dono | Corrigido na `phase-01/consolidation`: `now` só é vinculado com a cláusula que o usa; teste de regressão em `database.test.ts` e `ipc.test.ts`; a UI voltou a listar o histórico completo (`includeInactive: true`) |
 | 2026-11-27 | A → C / X | Fase 02 (`apps/desktop/src/main/ipc.ts`): conectar os 30 canais `ai.*` e o repasse dos eventos `ai.inference.event` e `ai.local.pullProgress` para `webContents` durante a consolidação das branches `phase-02/codex-ai-gateway`, `phase-02/claude-*` e `phase-02/antigravity-ai-center`. A Central de IA já consome todos os contratos `0.6.0` via `callAiChannel` e reporta honestamente `UNSUPPORTED` enquanto o handler não estiver registrado | Aberto para a consolidação da Fase 02 |
 | 2026-11-27 | A → X | Fase 02 (`packages/provider-sdk`): confirmar que `opencode-cli` (`OpenCode`) é registrado no `AdapterRegistry` padrão do processo `main` na consolidação; `AgentsProvidersView` já o exibe e permite configurá-lo usando os metadados oficiais (`https://opencode.ai/docs/cli/commands/`) | Aberto para a consolidação da Fase 02 |
+| 2026-11-27 | X → C | Revisar contratos aditivos 0.5.0 e ajustes seguintes, migration 003 do ledger, handlers IPC em `apps/desktop/src/main/ipc.ts` e teste smoke de schema; mudanças necessárias ao gateway da Fase 02 | PR de contratos #5 publicado; implementação em `phase-02/codex-ai-gateway`, revisão pendente |
+| 2026-11-27 | X → A | Revisar adições de `@devbrain/ai-gateway` ao bundle e dependências do desktop; consumir novos canais de IA no renderer | Integração técnica em `phase-02/codex-ai-gateway`; UI pendente |
 
 ## Consolidação (`phase-01/consolidation`)
 
@@ -137,3 +150,93 @@ Mudanças em arquivos de outros donos, todas revisáveis no PR de consolidação
 | `scripts/verify-real-agent.mjs` (Codex) | Verificação real parametrizada por adaptador | Validação externa |
 
 Contratos: **0.4.0** (aditivo; ver CONTRACTS.md).
+
+## Fase 02 — inteligência (`phase-02/claude-intelligence`)
+
+Base: commit do gateway do Codex `4b21b98`. A branch do Antigravity foi apenas
+consultada; nada dela foi incorporado.
+
+### Para o Codex (gateway)
+
+- **Mudanças feitas no gateway** (ponto de seleção previsto em ADR-0022):
+  `DeterministicRouter` removido; `AiGateway` recebe `clock` como 4º parâmetro do
+  construtor e expõe `engine` (`RoutingPolicyEngine`), `intelligence`
+  (`IntelligenceStore`), `explain`, `budgetStatus`, `modelEvidence` e `runBenchmark`.
+  Cada tentativa é reavaliada; falha de admissão (`QUOTA_EXCEEDED` no `reserveAll`) não
+  aplica cooldown nem conta tentativa. 429/cota aplica cooldown a **todas** as rotas do
+  mesmo provedor. `usage.cost` agora é preenchido quando o preço é verificado.
+- **Ledger:** novo método somente leitura `QuotaLedger.windowState(quotaId)`.
+  A demanda de cota por tokens de entrada deixou de ser 0 (estimativa conservadora).
+- **Teste alterado:** `gateway.test.ts` › "uses the next free route when the first shared
+  quota is exhausted" agora espera 0 tentativas (a rota é excluída no estágio 1) e
+  verifica a explicação.
+- **Segurança:** `LocalGatewayServer` rejeita `Host` diferente de `127.0.0.1:<porta>`/
+  `localhost:<porta>` e qualquer cabeçalho `Origin`; aceita `context` (projeto/sessão).
+  `SafeHttpTransport` passa a recusar IPv6 6to4 (`2002::/16`) e Teredo (`2001:0::/32`).
+- **Pendências que continuam com o Codex (dependências, não feitas aqui):** ≥ 20
+  conexões específicas validadas; OpenCode ligado ao gateway (usar
+  `new LocalGatewayServer(gateway, policyId, { projectId, sessionId })` por execução);
+  descoberta e atualização de catálogo; validação com 2 provedores externos reais;
+  runtimes locais reais; leitura do custo reportado pelo provedor (`reportedMicros`) e
+  de cabeçalhos de cota (`ai.quota.observations` ainda retorna `[]`).
+
+### Para o Antigravity (UI)
+
+- A elegibilidade calculada no renderer (`evaluateProviderEligibility`) e
+  `prefs.projectPrivacy` em `localStorage` **não** decidem nada. Use:
+  `ai.projectPolicy.get/save` (classe, provedores aprovados, orçamento),
+  `ai.privacyProfiles.list/save` (fatos verificados pelo usuário),
+  `ai.routes.explain` (ranking + motivos de exclusão para exibir),
+  `ai.budget.status`, `ai.cost.get`, `ai.quota.forecast`, `ai.benchmark.*` (`quality` = evidência medida, somente leitura),
+  `ai.context.preview`, `ai.handoff.build`.
+- Toda requisição de inferência originada de um projeto deve enviar `projectId`.
+- Estimativas devem aparecer como estimativas (`resetBasis`, `projectionBasis`,
+  `costState`), e `BudgetStatus.enforcedBy` é sempre `devbrain` (não é limite do
+  provedor).
+- Conflito de numeração: ADR-0022 existe nas duas branches.
+
+### Migração
+
+- `004 phase-02-intelligence` (somente acréscimo): `ai_project_policies`,
+  `ai_privacy_profiles`, `ai_routing_decisions`, `ai_cost_records`, `ai_benchmark_runs`.
+
+## Fase 02 — ponte de ferramentas e agente nativo (`phase-02/agent-bridge`)
+
+Contratos **0.8.0** (aditivos). Mudanças fora dos pacotes de Claude, registradas aqui para
+revisão dos donos:
+
+### Para o Codex (gateway e motor de execução)
+
+- `protocols.ts`: chamadas de ferramentas em Chat Completions (incluindo `custom`),
+  Anthropic Messages, Gemini e Ollama; requisição, histórico (`tool_calls`/`tool`,
+  `tool_use`/`tool_result`, `functionCall`/`functionResponse`), resposta e streaming
+  (`tool-call-delta`). O protocolo Responses recusa ferramentas com `UNSUPPORTED`.
+- `gateway.ts`: repassa `toolCalls` no resultado e eventos `tool-call-delta` (marcam saída
+  exposta: sem fallback depois disso). Argumentos de ferramenta não são persistidos no
+  SQLite (só id e nome). Novos `policies()` e `freeOnly(id)`.
+- `server.ts`: o `501` para ferramentas foi substituído por `translateOpenAiChat`;
+  `functions`/`function_call` legados continuam `501`.
+- O roteador exige `capabilities.tools` sempre que a requisição traz ferramentas ou
+  histórico de ferramentas e exclui o protocolo Responses nesse caso.
+- `execution-engine`: helpers de processo movidos para `process.ts` (sem mudança de
+  comportamento); novo `agent-runtime.ts`; `OperationalExecutionService` aceita um terceiro
+  argumento opcional (cliente do gateway) e executa o adapter `devbrain-agent` sem processo
+  externo. Projeto restrito não bloqueia esse adapter no motor: o gateway restringe cada
+  chamada de modelo a rotas locais.
+- `provider-sdk`: novo adapter `devbrain-agent` (`http-api`, enforcement `per-action`).
+
+### Para o Antigravity (UI)
+
+- `WorkspaceView`: quando o agente selecionado usa `devbrain-agent`, mostra estratégia de
+  roteamento (`ai.policies.list`), modelo com ferramentas ou roteamento automático, comandos
+  pré-autorizados e limite de turnos; o bloqueio de projeto restrito não se aplica a esse
+  adapter. Eventos `tool-call` exibem estado e resultado.
+- Para usar: Central de IA → registrar o provedor "DevBrain Agent (AI Gateway)" a partir do
+  catálogo de adapters e criar um agente para ele. Modelos só são elegíveis quando
+  cadastrados com "ferramentas" habilitado.
+
+### OpenCode
+
+Decisão em ADR-0029: o OpenCode continua bloqueado fora de projeto público com custo
+autorizado. A ponte HTTP agora aceita ferramentas, mas as ferramentas do OpenCode rodam
+dentro do próprio OpenCode, fora da autorização do Core.
