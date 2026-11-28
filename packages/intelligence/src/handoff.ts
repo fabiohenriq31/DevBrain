@@ -9,6 +9,21 @@ import {
 
 const ACTIVE = new Set(['queued', 'awaiting-approval', 'running', 'interrupting']);
 const MUTATING = new Set(['created', 'modified', 'deleted', 'renamed']);
+const testCommand = (executable: string, args: readonly string[]): string | null => {
+  const name = executable
+    .split(/[\\/]/)
+    .pop()
+    ?.replace(/\.(exe|cmd|bat)$/i, '')
+    .toLowerCase();
+  const first = args[0]?.toLowerCase();
+  if (['vitest', 'jest', 'pytest'].includes(name ?? ''))
+    return [name, ...args].join(' ').slice(0, 500);
+  if (['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go'].includes(name ?? '') && first === 'test')
+    return [name, ...args].join(' ').slice(0, 500);
+  if (name === 'pnpm' && first === 'run' && args[1]?.toLowerCase() === 'test')
+    return [name, ...args].join(' ').slice(0, 500);
+  return null;
+};
 
 /** What each handoff kind may and may not do — surfaced to the receiver as constraints. */
 const KIND_RULES: Record<HandoffKind, string> = {
@@ -109,7 +124,25 @@ export class ContextHandoffService {
         summary: (r.result?.summary ?? `status ${r.status}`).slice(0, 4000),
         ok: r.status === 'completed' ? true : ACTIVE.has(r.status) ? null : false,
       })),
-      tests: [],
+      tests: history.executions
+        .flatMap((record) => {
+          const payload = record.request.payload;
+          if (payload.kind !== 'command') return [];
+          const name = testCommand(payload.executable, payload.args);
+          if (!name) return [];
+          return [
+            {
+              name,
+              status:
+                record.status === 'completed'
+                  ? ('passed' as const)
+                  : ACTIVE.has(record.status)
+                    ? ('unknown' as const)
+                    : ('failed' as const),
+            },
+          ];
+        })
+        .slice(-500),
       errors,
       pending: state?.nextSteps ?? [],
       nextAction: running

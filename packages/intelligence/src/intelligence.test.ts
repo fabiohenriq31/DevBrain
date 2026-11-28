@@ -594,6 +594,26 @@ describe('ContextHandoffService', () => {
     expect(packet.completion).toBe('blocked');
     expect(packet.constraints.join(' ')).toContain('NOT resumed');
   });
+
+  it('includes only explicit test commands observed in the session', () => {
+    const recorded = execution('exe_00000000-0000-4000-8000-000000000003', 'completed');
+    const history = {
+      session,
+      executions: [
+        {
+          ...recorded,
+          request: {
+            ...recorded.request,
+            payload: { kind: 'command', executable: 'pnpm', args: ['test'] },
+          },
+        },
+      ],
+      files: [],
+      checkpoints: [],
+    } as unknown as SessionHistory;
+    const packet = new ContextHandoffService().build(history, 'session-continuation');
+    expect(packet.tests).toEqual([{ name: 'pnpm test', status: 'passed' }]);
+  });
 });
 
 describe('BenchmarkEngine (objective graders)', () => {

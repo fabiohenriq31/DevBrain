@@ -459,8 +459,16 @@ export const createHandlers = ({
         .map((m) => g().modelEvidence(m.id)),
     'ai.context.preview': (input) =>
       new ContextOptimizer().optimize(input.messages, { budgetTokens: input.budgetTokens }).report,
-    'ai.handoff.build': async (input) =>
-      new ContextHandoffService().build(await c().sessions.history(input.sessionId), input.kind),
+    'ai.handoff.build': async (input) => {
+      const history = await c().sessions.history(input.sessionId);
+      const packet = new ContextHandoffService().build(history, input.kind);
+      const workspace = history.session.workspaceId
+        ? c().db.workspaces.findById(history.session.workspaceId)
+        : null;
+      if (!workspace) return packet;
+      const repository = await git.detect(workspace.rootPath).catch(() => null);
+      return repository ? { ...packet, branch: repository.headBranch } : packet;
+    },
     'ai.local.list': async () =>
       Promise.all([local().inspect(), ...localRuntimes.map((runtime) => runtime.inspect())]),
     'ai.local.models': (input) => {

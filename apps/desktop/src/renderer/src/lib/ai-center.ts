@@ -63,6 +63,7 @@ export const AI_CHANNEL_KEYS = [
   'ai.local.remove',
   'ai.local.benchmark',
   'ai.checkpoints.latest',
+  'ai.handoff.build',
 ] as const satisfies readonly IpcChannelKey[];
 
 export type AiChannelKey = (typeof AI_CHANNEL_KEYS)[number];

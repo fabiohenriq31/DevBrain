@@ -37,6 +37,9 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
 - O fluxo de inferência aplica deduplicação determinística de histórico antes
   do roteamento e do envio ao provedor. Compactação com omissão e referências
   segue desabilitada até existir recuperação durável dos trechos removidos.
+- O handoff consultado na interface inclui a branch Git observada no workspace,
+  arquivos registrados pelos eventos da sessão e comandos de teste explícitos
+  com seu estado. O commit base só é afirmado quando há checkpoint.
 - Descoberta local por `GET /v1/models` para LM Studio e llama.cpp server,
   além da API nativa do Ollama. Identificadores upstream com `/` são aceitos
   pelos contratos 0.7.1. A porta padrão documentada do llama.cpp é 9931.
@@ -75,7 +78,7 @@ desconhecidos até verificação explícita por conta e modelo.
 
 ## Validação e aceite
 
-`pnpm validate`: TypeScript, lint, Prettier, 196 testes, varredura de segredos,
+`pnpm validate`: TypeScript, lint, Prettier, 197 testes, varredura de segredos,
 build e smoke Electron aprovados na consolidação. O smoke cobre a regressão
 da Fase 01, armazenamento cifrado, sessões, recuperação, execução e UI.
 
@@ -90,8 +93,8 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.748.122 bytes; SHA-256
-`BA27F5E0C18D1A15169A4943B5E68DB644FD8CA18B164E66065C558C52783C1A`).
+(120.748.696 bytes; SHA-256
+`B57E363F11E8B35E77F7DF3D8F191B7D1EF5B6862742F84A58C9B0A195795895`).
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.
@@ -113,7 +116,7 @@ tocados.
    renovação e custos reportados; observações só surgem quando há definição
    explícita e cabeçalho reconhecido.
 3. Integrar os demais canais IPC 0.7.0 à UI, recuperação de referências de
-   contexto e handoff ao fluxo real,
+   contexto e uso automático do handoff entre modelos,
    configuração de endpoints locais personalizados e downloads em runtimes que
    ofereçam API oficial para isso.
 4. Validar dois provedores independentes e fallback real com contas autorizadas.

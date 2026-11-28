@@ -6,6 +6,7 @@ import type {
   CostRecord,
   ExplainedRoutingDecision,
   FallbackAttempt,
+  HandoffPacket,
   RoutingDecision,
   TaskCheckpoint,
 } from '@devbrain/contracts';
@@ -1005,6 +1006,7 @@ export const DiagnosticsSection = ({
   const [inspectedAttempts, setInspectedAttempts] = useState<FallbackAttempt[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>(sessions[0]?.id ?? '');
   const [latestTaskCheckpoint, setLatestTaskCheckpoint] = useState<TaskCheckpoint | null>(null);
+  const [handoffPacket, setHandoffPacket] = useState<HandoffPacket | null>(null);
 
   const [importSourceId, setImportSourceId] = useState('models-dev');
   const [importJson, setImportJson] = useState('');
@@ -1044,6 +1046,20 @@ export const DiagnosticsSection = ({
             : res.error.message,
       });
     }
+  };
+
+  const handleBuildHandoff = async () => {
+    if (!selectedSessionId || !sessions.some((session) => session.id === selectedSessionId)) return;
+    const out = await callAiChannel('ai.handoff.build', {
+      sessionId: selectedSessionId,
+      kind: 'session-continuation',
+    });
+    if (out.status === 'ok') setHandoffPacket(out.data);
+    else
+      setFeedback({
+        tone: 'info',
+        text: out.status === 'unsupported' ? out.message : out.error.message,
+      });
   };
 
   const handleImportCatalog = async () => {
@@ -1235,12 +1251,38 @@ export const DiagnosticsSection = ({
             >
               {pt ? 'Inspecionar' : 'Inspect'}
             </Button>
+            <Button
+              size="xs"
+              variant="secondary"
+              disabled={!selectedSessionId}
+              onClick={() => void handleBuildHandoff()}
+            >
+              {pt ? 'Preparar handoff' : 'Build handoff'}
+            </Button>
           </div>
           {latestTaskCheckpoint ? (
             <UntrustedBlock
               label={`${latestTaskCheckpoint.id} (${latestTaskCheckpoint.state})`}
               text={latestTaskCheckpoint.summary}
               maxHeight={120}
+            />
+          ) : null}
+          {handoffPacket ? (
+            <UntrustedBlock
+              label={`${pt ? 'Handoff de' : 'Handoff from'} ${handoffPacket.sessionId ?? ''}`}
+              text={JSON.stringify(
+                {
+                  branch: handoffPacket.branch,
+                  baseCommit: handoffPacket.baseCommit,
+                  filesTouched: handoffPacket.filesTouched,
+                  tests: handoffPacket.tests,
+                  pending: handoffPacket.pending,
+                  reconciliationRequired: handoffPacket.reconciliationRequired,
+                },
+                null,
+                2,
+              )}
+              maxHeight={200}
             />
           ) : null}
         </div>
