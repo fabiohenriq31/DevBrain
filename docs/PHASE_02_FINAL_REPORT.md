@@ -27,6 +27,9 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
   consulta `ai.routes.explain`, `ai.budget.status`, `ai.quota.forecast` e
   `ai.cost.get` para mostrar motivos de exclusão, orçamento reservado,
   projeções de cota e custo da última inferência quando esses dados existem.
+  Fatos de privacidade são lidos de `ai.privacyProfiles.list` e só são salvos
+  por ação do usuário com URL de fonte e confirmação explícita; fatos não
+  informados continuam `unknown`.
 - Execuções CLI incompatíveis com projeto restrito são bloqueadas no motor. O
   OpenCode CLI sem ponte verificada ao gateway só pode operar em projeto público
   com autorização explícita para custo pago e ilimitado. Esse modo usa a conta
@@ -95,8 +98,8 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.748.695 bytes; SHA-256
-`A08D45B50BB083B74796293ACEF30CD4A1EBF8B82A0E3AEFAC3A3BCE2D68654B`).
+(120.749.689 bytes; SHA-256
+`6C14D2B974B5E1215A484FA6DBCFD2070DC319C702D6C17012C36ADD94556A56`).
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   AgentSession,
   ApplicationSettings,
@@ -7,6 +7,7 @@ import type {
   ExplainedRoutingDecision,
   FallbackAttempt,
   HandoffPacket,
+  ProviderPrivacyProfile,
   RoutingDecision,
   TaskCheckpoint,
 } from '@devbrain/contracts';
@@ -98,6 +99,68 @@ export const RoutingStrategiesSection = ({
   // Router dry-run explanation
   const [routerDecision, setRouterDecision] = useState<RoutingDecision | null>(null);
   const [routerExplanation, setRouterExplanation] = useState<ExplainedRoutingDecision | null>(null);
+  const [privacyProfiles, setPrivacyProfiles] = useState<ProviderPrivacyProfile[]>([]);
+  const [profileProviderId, setProfileProviderId] = useState('');
+  const [profileTraining, setProfileTraining] = useState<'unknown' | 'no' | 'opt-out' | 'yes'>(
+    'unknown',
+  );
+  const [profileRetention, setProfileRetention] = useState<
+    'unknown' | 'none' | 'limited' | 'indefinite'
+  >('unknown');
+  const [profileCommercial, setProfileCommercial] = useState<'unknown' | 'allowed' | 'restricted'>(
+    'unknown',
+  );
+  const [profileSourceUrl, setProfileSourceUrl] = useState('');
+  const [profileConfirmed, setProfileConfirmed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void callAiChannel('ai.privacyProfiles.list', {}).then((out) => {
+      if (active && out.status === 'ok') setPrivacyProfiles(out.data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleSavePrivacyProfile = async () => {
+    if (!profileProviderId || !profileConfirmed || !/^https:\/\//i.test(profileSourceUrl)) return;
+    const existing = privacyProfiles.find((profile) => profile.providerId === profileProviderId);
+    const out = await callAiChannel('ai.privacyProfiles.save', {
+      ...(existing?.sourceUrl === profileSourceUrl ? existing : {}),
+      providerId: profileProviderId,
+      trainingOnInputs: profileTraining,
+      retention: profileRetention,
+      commercialUse: profileCommercial,
+      sourceUrl: profileSourceUrl,
+      verifiedBy: 'user',
+    });
+    if (out.status === 'ok') {
+      setPrivacyProfiles((prev) => [
+        out.data,
+        ...prev.filter((profile) => profile.providerId !== out.data.providerId),
+      ]);
+      setProfileConfirmed(false);
+      setFeedback({
+        tone: 'success',
+        text: pt ? 'Perfil de privacidade salvo.' : 'Privacy profile saved.',
+      });
+    } else {
+      setFeedback({
+        tone: 'danger',
+        text: out.status === 'unsupported' ? out.message : out.error.message,
+      });
+    }
+  };
+  const selectProfileProvider = (providerId: string) => {
+    setProfileProviderId(providerId);
+    const existing = privacyProfiles.find((profile) => profile.providerId === providerId);
+    setProfileTraining((existing?.trainingOnInputs ?? 'unknown') as typeof profileTraining);
+    setProfileRetention((existing?.retention ?? 'unknown') as typeof profileRetention);
+    setProfileCommercial((existing?.commercialUse ?? 'unknown') as typeof profileCommercial);
+    setProfileSourceUrl(existing?.sourceUrl ?? '');
+    setProfileConfirmed(false);
+  };
 
   const guardrails = useMemo(
     () =>
@@ -287,6 +350,121 @@ export const RoutingStrategiesSection = ({
             ))}
           </ul>
         </Banner>
+      </div>
+
+      <div className="db-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <h3 className="db-section-title">
+          {pt ? 'Fatos de privacidade verificados por provedor' : 'Verified provider privacy facts'}
+        </h3>
+        <DataTable
+          columns={[
+            { key: 'provider', header: pt ? 'Provedor' : 'Provider', render: (p) => p.providerId },
+            {
+              key: 'training',
+              header: pt ? 'Treinamento' : 'Training',
+              render: (p) => p.trainingOnInputs,
+            },
+            { key: 'retention', header: pt ? 'Retenção' : 'Retention', render: (p) => p.retention },
+            { key: 'source', header: pt ? 'Fonte' : 'Source', render: (p) => p.sourceUrl ?? '—' },
+          ]}
+          rows={privacyProfiles}
+          rowKey={(profile) => profile.providerId}
+          emptyMessage={pt ? 'Nenhum fato verificado.' : 'No verified facts.'}
+        />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 8,
+          }}
+        >
+          <Field label={pt ? 'Provedor' : 'Provider'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={profileProviderId}
+                onChange={(e) => selectProfileProvider(e.target.value)}
+              >
+                <option value="">{pt ? 'Selecione' : 'Select'}</option>
+                {snapshot.catalog.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label={pt ? 'Uso para treinamento' : 'Training on inputs'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={profileTraining}
+                onChange={(e) => setProfileTraining(e.target.value as typeof profileTraining)}
+              >
+                <option value="unknown">{pt ? 'Desconhecido' : 'Unknown'}</option>
+                <option value="no">{pt ? 'Não' : 'No'}</option>
+                <option value="opt-out">Opt-out</option>
+                <option value="yes">{pt ? 'Sim' : 'Yes'}</option>
+              </Select>
+            )}
+          </Field>
+          <Field label={pt ? 'Retenção' : 'Retention'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={profileRetention}
+                onChange={(e) => setProfileRetention(e.target.value as typeof profileRetention)}
+              >
+                <option value="unknown">{pt ? 'Desconhecida' : 'Unknown'}</option>
+                <option value="none">{pt ? 'Nenhuma' : 'None'}</option>
+                <option value="limited">{pt ? 'Limitada' : 'Limited'}</option>
+                <option value="indefinite">{pt ? 'Indefinida' : 'Indefinite'}</option>
+              </Select>
+            )}
+          </Field>
+          <Field label={pt ? 'Uso comercial' : 'Commercial use'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={profileCommercial}
+                onChange={(e) => setProfileCommercial(e.target.value as typeof profileCommercial)}
+              >
+                <option value="unknown">{pt ? 'Desconhecido' : 'Unknown'}</option>
+                <option value="allowed">{pt ? 'Permitido' : 'Allowed'}</option>
+                <option value="restricted">{pt ? 'Restrito' : 'Restricted'}</option>
+              </Select>
+            )}
+          </Field>
+        </div>
+        <Field label={pt ? 'URL oficial que comprova os fatos' : 'Official supporting URL'}>
+          {(props) => (
+            <Input
+              {...props}
+              value={profileSourceUrl}
+              onChange={(e) => setProfileSourceUrl(e.target.value)}
+              placeholder="https://..."
+            />
+          )}
+        </Field>
+        <Checkbox
+          checked={profileConfirmed}
+          onChange={(e) => setProfileConfirmed(e.target.checked)}
+          label={
+            pt
+              ? 'Li a fonte e confirmei os fatos informados.'
+              : 'I read the source and verified these facts.'
+          }
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={
+            !profileProviderId || !profileConfirmed || !/^https:\/\//i.test(profileSourceUrl)
+          }
+          onClick={() => void handleSavePrivacyProfile()}
+        >
+          {pt ? 'Salvar fatos verificados' : 'Save verified facts'}
+        </Button>
       </div>
 
       {/* Execution Strategy Presets (§11) */}

@@ -811,6 +811,7 @@ describe('Phase 02 — Multi-provider model grouping, local hardware estimates &
     );
     expect(routingHtml).toContain('Somente gratuito');
     expect(routingHtml).toContain('Somente local');
+    expect(routingHtml).toContain('Fatos de privacidade verificados');
 
     const benchmarksHtml = renderToStaticMarkup(
       React.createElement(BenchmarksSection, {

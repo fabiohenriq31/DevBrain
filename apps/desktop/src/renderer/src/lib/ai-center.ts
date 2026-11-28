@@ -43,6 +43,8 @@ export const AI_CHANNEL_KEYS = [
   'ai.routes.save',
   'ai.routes.select',
   'ai.routes.explain',
+  'ai.privacyProfiles.list',
+  'ai.privacyProfiles.save',
   'ai.policies.configure',
   'ai.inference.submit',
   'ai.inference.result',
