@@ -99,6 +99,18 @@ export class LocalGatewayServer {
     const input = body as Record<string, unknown>;
     if (typeof input.model !== 'string' || !Array.isArray(input.messages))
       throw new DevBrainError('VALIDATION_FAILED', 'Model and messages are required');
+    if (
+      (Array.isArray(input.tools) && input.tools.length > 0) ||
+      input.tool_choice !== undefined ||
+      input.messages.some((message) => {
+        if (!message || typeof message !== 'object') return false;
+        const item = message as Record<string, unknown>;
+        return (
+          item.role === 'tool' || item.tool_calls !== undefined || item.function_call !== undefined
+        );
+      })
+    )
+      throw new DevBrainError('UNSUPPORTED', 'Tool calls are not supported by this gateway bridge');
     const parsed = InferenceRequestSchema.safeParse({
       id: `inf_${randomUUID()}`,
       sessionId: this.context.sessionId ?? null,
@@ -169,7 +181,13 @@ export class LocalGatewayServer {
           response.destroy();
           return;
         }
-        const status = DevBrainError.is(error) && error.code === 'VALIDATION_FAILED' ? 400 : 503;
+        const status = DevBrainError.is(error)
+          ? error.code === 'VALIDATION_FAILED'
+            ? 400
+            : error.code === 'UNSUPPORTED'
+              ? 501
+              : 503
+          : 503;
         send(response, status, {
           error: {
             message: DevBrainError.is(error) ? error.message : 'Gateway unavailable',

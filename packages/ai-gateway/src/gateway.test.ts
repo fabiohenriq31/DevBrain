@@ -483,6 +483,19 @@ describe('authenticated loopback gateway', () => {
       });
       expect(authorized.status).toBe(200);
       expect(await authorized.json()).toMatchObject({ object: 'list', data: [] });
+      const toolsAttempt = await fetch(`${server.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${server.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'model-a',
+          messages: [{ role: 'user', content: 'edit a file' }],
+          tools: [{ type: 'function', function: { name: 'write_file' } }],
+        }),
+      });
+      expect(toolsAttempt.status).toBe(501);
     } finally {
       await server.close();
     }

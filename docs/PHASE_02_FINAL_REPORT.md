@@ -31,6 +31,8 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
   OpenCode CLI sem ponte verificada ao gateway só pode operar em projeto público
   com autorização explícita para custo pago e ilimitado. Esse modo usa a conta
   própria do CLI e **não** recebe as garantias de cotas do gateway.
+  O servidor local devolve `501` para chamadas de ferramentas, em vez de
+  ignorá-las e apresentar uma execução de código fictícia.
 - Benchmarks que executariam JavaScript gerado pelo modelo foram desativados:
   o permission model de Node não isola rede. A suíte exposta contém apenas
   avaliações estáticas/estruturadas.
@@ -93,8 +95,8 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.748.696 bytes; SHA-256
-`B57E363F11E8B35E77F7DF3D8F191B7D1EF5B6862742F84A58C9B0A195795895`).
+(120.748.695 bytes; SHA-256
+`A08D45B50BB083B74796293ACEF30CD4A1EBF8B82A0E3AEFAC3A3BCE2D68654B`).
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.
