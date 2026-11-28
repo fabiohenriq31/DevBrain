@@ -446,3 +446,109 @@ consentimento explícito.
    como aproximações (`Estimativa — não é garantia`), e `ai.local.pull` só é invocado após
    confirmação explícita (`confirm: true`), com acompanhamento em tempo real e cancelamento
    via `ai.local.cancelPull`.
+
+## ADR-0028 — O gateway transporta chamadas de ferramentas, nunca as executa
+
+**Status:** aceita (Fase 02)
+
+**Contexto.** Modelos só programam como agentes se puderem propor chamadas estruturadas. O
+servidor local devolvia `501` para qualquer ferramenta.
+
+**Decisão.** Contratos 0.8.0 modelam definições, chamadas, resultados, escolha, chamadas
+paralelas e fragmentos em streaming. Cada protocolo traduz para o formato documentado do
+provedor (Chat Completions, Anthropic Messages, Gemini, Ollama). O Responses API recusa
+ferramentas até haver implementação verificada. O roteador só admite modelos marcados com
+`capabilities.tools`. O servidor HTTP e o gateway não executam ferramentas. Chamadas
+malformadas (nome inválido, argumentos acima de 400 KB) são descartadas, nunca adivinhadas.
+Argumentos não são gravados no SQLite. Um fragmento de chamada emitido em streaming conta
+como saída exposta e impede fallback silencioso.
+
+**Consequências.** Clientes compatíveis com OpenAI podem usar ferramentas pelo gateway, e a
+segurança da execução fica com quem executa. Capacidade de ferramenta declarada errada no
+cadastro do modelo produz erro do provedor, não execução.
+
+## ADR-0029 — Agente nativo DevBrain em vez de OpenCode como agente operacional
+
+**Status:** aceita (Fase 02)
+
+**Contexto.** A integração do OpenCode pelo mecanismo de provedores personalizados exigiria
+confiar em configuração que o próprio repositório pode sobrepor (`.opencode`, configuração
+de sistema e de usuário, plugins e MCP). Suas ferramentas de arquivo e shell rodam no
+processo do OpenCode, fora de `enforce`/`authorizeCommand`. O CLI não está instalado neste
+host e não foi possível verificar o comportamento de `opencode run` com permissões `ask`.
+
+**Decisão.** O agente operacional da Fase 02 é o runtime nativo (`devbrain-agent`):
+
+- O modelo é chamado pelo gateway a cada turno, com projeto e sessão, então privacidade,
+  cotas, orçamento e elegibilidade valem para cada chamada.
+- Ferramentas mínimas: listar, ler (até 256 KB, sem binários), buscar literal, editar por
+  trecho único, criar arquivo novo, `git status`/`git diff` e comandos pré-autorizados pelo
+  usuário, escolhidos por id. Não há shell.
+- Toda operação passa por `core.authorization.enforce` (caminho real, symlinks, junctions,
+  exclusões, política e aprovações) ou `authorizeCommand`. Uma chamada vinda do modelo nunca
+  é aprovada automaticamente: vale a política do agente, inclusive pedidos de aprovação.
+- Limites rígidos de turnos, chamadas (8 por turno), tokens e duração. Repetir a mesma
+  chamada 3 vezes sem progresso encerra a execução. Uma ação com efeito colateral de
+  resultado desconhecido (cancelamento ou timeout durante a execução, falha de escrita) não é
+  repetida antes de uma verificação de estado.
+- Turnos inteiros sem streaming: um fallback do gateway troca de rota sem misturar saídas
+  parciais. A troca de modelo é registrada no limite do turno, com o histórico estruturado
+  preservado.
+- O checkpoint guarda o registro das chamadas e as verificações pendentes. A próxima
+  execução na mesma sessão recebe esse resumo como contexto.
+
+O OpenCode permanece bloqueado fora de projeto público com custo autorizado. Nenhuma
+afirmação de modo gratuito, local ou restrito é feita para ele.
+
+**Consequências.** Existe um agente funcional sob controle do Core e do gateway, testado de
+ponta a ponta com modelo roteirizado. A qualidade real depende do modelo configurado. Ainda
+não há orquestração multiagente nem retomada de turno parcial.
+
+## ADR-0030 — Arquitetura de contenção de altura/largura e responsabilidades explícitas de rolagem no desktop
+
+**Status:** aceita (Fase 02, consolidação)
+
+**Contexto.** No instalador `0.2.0`, a rolagem falhava globalmente nas telas do aplicativo.
+A reprodução instrumentada no Electron identificou quatro causas arquiteturais combinadas:
+
+1. Os wrappers internos das divisões de `SplitPane` (`packages/ui/src/layout.ts`) eram
+   `display: block` com `height: auto`, enquanto `SplitPane` usava apenas `flex: 1` sem
+   `height: 100%`. Quando um `SplitPane` (ou qualquer view baseada em `flex: 1`) ficava
+   aninhado dentro de outro `SplitPane` (`App.tsx`, `WorkspaceView.tsx`,
+   `MarketplaceWizardSection.tsx`), a cadeia flex era interrompida: os containers internos
+   expandiam para a altura integral do conteúdo (ex.: `1240 px` em janela de `500 px`, onde
+   `clientHeight === scrollHeight`), impedindo qualquer `scrollTop > 0`, enquanto o
+   `SplitPane` externo cortava o excedente com `overflow: hidden`.
+2. Containers intermediários de host (`App.tsx` `<main> > div`, `AiResourceCenterView` nas
+   abas `marketplace` e `agents`, `WorkspaceView` no painel inferior) usavam `display: block`
+   em vez de `display: flex; flex-direction: column; min-width: 0; min-height: 0`.
+3. `MarketplaceWizardSection` possuía `minHeight: 500` fixo no container raiz e `ProjectsView`
+   usava `gridTemplateColumns: '320px 1fr'` sem `minmax(0, 1fr)`, permitindo transbordo em
+   janelas compactas.
+4. Pela especificação CSS Flexbox §4.5, itens flex com `overflow: auto` (como `DataTable`)
+   possuem `min-height` automático igual a `0`, podendo ser esmagados verticalmente dentro de
+   colunas roláveis sem `flex-shrink: 0`; além disso, `@xterm/xterm` 6.0 substituiu a rolagem
+   nativa de `.xterm-viewport` por `.xterm-scrollable-element`.
+
+**Decisão.**
+
+- **Casca estrutural sem `overflow: auto` global:** `html`, `body`, `#root`, o shell de 3
+  painéis e `SplitPane` permanecem estritamente contidos (`overflow: hidden`), mas todo
+  wrapper de `SplitPane` e todo host intermediário de view passam a ser
+  `display: flex; flex-direction: column; flex: 1 1 0%; min-width: 0; min-height: 0; overflow: hidden`
+  (com `max-width`/`max-height` protetivos no painel fixo para janelas reduzidas).
+- **Regiões explícitas de rolagem (`data-scroll-region`):** cada painel folha (menu lateral,
+  inspetor contextual, abas da Central de IA, lista/detalhe do Marketplace, lista/detalhe de
+  Projetos, compositor e abas inferiores do Workspace, Segurança, Configurações e corpo de
+  `Dialog`) assume responsabilidade independente de rolagem (`overflow-y: auto`,
+  `overflow-x: auto` quando aplicável), preservando cabeçalhos e barras de ferramentas fixos
+  (`flex-shrink: 0`).
+- **Tabelas, cartões e terminal:** `DataTable`, `.db-card`, `Banner`, `EmptyState` e
+  `UntrustedBlock` declaram `flex-shrink: 0; min-width: 0` (evitando colapso vertical e
+  habilitando rolagem horizontal própria); `Tabs` permite rolagem horizontal por roda/touchpad;
+  `TerminalPane` estiliza `.xterm-scrollable-element > .scrollbar > .slider` e sincroniza
+  `viewportY`/`baseY`.
+- **Verificação E2E real obrigatória:** `scripts/smoke-desktop.mjs` e
+  `apps/desktop/src/renderer/scroll-e2e.mjs` (`pnpm --filter @devbrain/desktop verify:scroll`)
+  disparam eventos reais `Input.dispatchMouseEvent({ type: 'mouseWheel' })` no Electron e
+  validam variações reais de `scrollTop` e `scrollLeft` em todas as áreas.

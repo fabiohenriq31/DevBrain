@@ -116,6 +116,16 @@ preservação dos dados.
 
 ## Fase 02
 
+### Ponte de ferramentas e agente nativo: `phase-02/agent-bridge` → `phase-02/consolidation` (2026-11-27)
+
+- Contratos 0.8.0: ferramentas, chamadas, resultados, escolha, chamadas paralelas e fragmentos em streaming.
+- Gateway transporta ferramentas em Chat Completions, Anthropic Messages, Gemini e Ollama; o servidor local deixou de responder `501` para ferramentas.
+- Agente nativo `devbrain-agent` com ferramentas autorizadas pelo Core, limites rígidos, detecção de repetição, efeitos desconhecidos não repetidos e checkpoints com registro de chamadas.
+- Workspace: estratégia de roteamento, modelo ou roteamento automático, comandos pré-autorizados e estados das chamadas.
+- Cenário ponta a ponta com Core e gateway reais e modelo roteirizado: correção de bug com teste autorizado, negações, fallback, política gratuita, projeto restrito, cancelamento com recuperação e limites.
+- Instalador 0.2.0 reconstruído; instalação limpa da 0.1.0, atualização para 0.2.0 com migração dos dados, smoke empacotado e desinstalação validados em diretórios descartáveis.
+- Sem modelos reais: nenhuma credencial nem runtime local disponível neste host.
+
 ### Consolidação: `phase-02/consolidation` (2026-11-27)
 
 - Merge da inteligência Claude sobre `develop` com a UI Antigravity e o gateway Codex, preservando o histórico.
@@ -151,8 +161,9 @@ Correção de consolidação em `phase-02/consolidation` (2026-11-28):
 descoberta autenticada de modelos antes de rota (`ai.connections.discover`),
 reutilização segura de credenciais existentes, retomada do assistente pela
 persistência real, rota e política por projeto, seletor direto de modelos no
-Workspace. `pnpm validate` passou com 201 testes; o executável empacotado
-passou no smoke Electron com provedor controlado. Inferência externa com as
+Workspace. `pnpm validate` passou com 218 testes após integrar a ponte do
+agente nativo; o executável empacotado passou no smoke Electron com provedor
+controlado, e 34 verificações de rolagem real passaram. Inferência externa com as
 credenciais do proprietário permanece para validação manual; nenhuma foi lida
 ou utilizada durante o desenvolvimento.
 

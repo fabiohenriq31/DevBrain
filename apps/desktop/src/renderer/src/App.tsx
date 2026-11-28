@@ -647,18 +647,25 @@ export const App = () => {
 
   const sidebarContent = (
     <nav
+      data-scroll-region="sidebar"
       aria-label={pt ? 'Navegação principal' : 'Primary navigation'}
       style={{
+        flex: '1 1 0%',
         height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
+        gap: 8,
         padding: 8,
         background: 'var(--db-sidebar)',
         borderRight: `1px solid ${tokens.color.border}`,
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
         <button
           type="button"
           className="db-nav-item"
@@ -724,7 +731,7 @@ export const App = () => {
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
         <button
           type="button"
           className="db-nav-item"
@@ -742,10 +749,15 @@ export const App = () => {
 
   const contextInspectorContent = (
     <aside
+      data-scroll-region="inspector"
       aria-label={pt ? 'Painel contextual' : 'Context panel'}
       style={{
+        flex: '1 1 0%',
         height: '100%',
+        minWidth: 0,
+        minHeight: 0,
         overflowY: 'auto',
+        overflowX: 'hidden',
         padding: 12,
         background: tokens.color.surface,
         borderLeft: `1px solid ${tokens.color.border}`,
@@ -880,6 +892,8 @@ export const App = () => {
       style={{
         display: 'flex',
         flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
         height: '100%',
         minWidth: 0,
         minHeight: 0,
@@ -888,7 +902,7 @@ export const App = () => {
       }}
     >
       {bootError ? (
-        <div style={{ padding: 12 }}>
+        <div style={{ padding: 12, flexShrink: 0 }}>
           <Banner
             tone="danger"
             title={`${bootError.title} (${bootError.code})`}
@@ -907,7 +921,7 @@ export const App = () => {
       ) : null}
 
       {storageHealth?.uncleanShutdownDetected && !dismissedRecoveryBanner ? (
-        <div style={{ padding: '8px 12px 0 12px' }}>
+        <div style={{ padding: '8px 12px 0 12px', flexShrink: 0 }}>
           <Banner
             tone="warning"
             title={
@@ -928,7 +942,16 @@ export const App = () => {
         </div>
       ) : null}
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: '1 1 0%',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+      >
         {section === 'workspace' ? (
           <WorkspaceView
             activeProject={activeProject}

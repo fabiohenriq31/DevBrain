@@ -251,6 +251,22 @@ Consolidação (ADR-0020): **custo desconhecido não é custo zero**.
 - Servidor loopback: token Bearer, `Host` restrito ao próprio endereço e sem `Origin`
   (defesa contra DNS rebinding e páginas web).
 
+## Agente nativo e ferramentas (Fase 02)
+
+- O gateway e o servidor local apenas transportam chamadas de ferramentas. Nenhuma é
+  executada no processo HTTP.
+- O agente `devbrain-agent` executa ferramentas no processo main, cada uma autorizada por
+  `enforce` (leitura e escrita resolvem o caminho real e recusam symlinks na hora da escrita)
+  ou `authorizeCommand` (sem shell, ambiente mínimo, timeout, saída limitada a 64 KB).
+- Comandos só podem ser escolhidos por id entre os definidos pelo usuário na execução.
+  `run_command` com id desconhecido é inválido, não uma tentativa de execução.
+- Conteúdo de arquivos e saída de comandos é tratado como dado não confiável e não altera
+  limites nem permissões. `.env` e chaves continuam negados pela política padrão.
+- Projeto restrito: o motor aceita o agente nativo porque o gateway restringe cada chamada
+  de modelo a rotas locais; os testes cobrem a recusa de rota não local.
+- Isso não é isolamento de sistema operacional: um comando pré-autorizado roda com as
+  permissões do usuário dentro do diretório de trabalho.
+
 ## Repositório público
 
 - Nunca publique credenciais, `.env`, `*.db`, logs, configurações pessoais

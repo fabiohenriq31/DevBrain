@@ -129,7 +129,7 @@ export const GatewayAgentPanel = ({ projectId, language }: GatewayAgentPanelProp
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <strong>
-          {pt ? 'DevBrain Agent · modelos do gateway' : 'DevBrain Agent · gateway models'}
+          {pt ? 'Conversa direta · modelos do gateway' : 'Direct chat · gateway models'}
         </strong>
         <Button size="xs" variant="secondary" onClick={() => void refresh()}>
           {pt ? 'Atualizar' : 'Refresh'}

@@ -10,6 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
   type ReactNode,
+  type WheelEvent as ReactWheelEvent,
 } from 'react';
 import { tokens } from './tokens.js';
 
@@ -63,7 +64,8 @@ export const Dialog = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 20,
+        padding: 16,
+        overflow: 'hidden',
       },
     },
     h(
@@ -74,8 +76,10 @@ export const Dialog = ({
         'aria-labelledby': titleId,
         style: {
           width: '100%',
-          maxWidth: width,
-          maxHeight: '88vh',
+          maxWidth: `min(${width}px, calc(100vw - 32px))`,
+          maxHeight: 'calc(100vh - 32px)',
+          minWidth: 0,
+          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
           background: tokens.color.surface,
@@ -95,11 +99,12 @@ export const Dialog = ({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
+            flexShrink: 0,
           },
         },
         h(
           'div',
-          null,
+          { style: { minWidth: 0 } },
           h(
             'h2',
             {
@@ -132,13 +137,28 @@ export const Dialog = ({
                   lineHeight: 1,
                   padding: '4px 6px',
                   borderRadius: tokens.radius.sm,
+                  flexShrink: 0,
                 },
               },
               '×',
             )
           : null,
       ),
-      h('div', { style: { padding: 16, overflowY: 'auto', flex: 1 } }, children),
+      h(
+        'div',
+        {
+          'data-scroll-region': 'dialog-body',
+          style: {
+            padding: 16,
+            flex: '1 1 auto',
+            minWidth: 0,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'auto',
+          },
+        },
+        children,
+      ),
       footer
         ? h(
             'div',
@@ -150,7 +170,9 @@ export const Dialog = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'flex-end',
+                flexWrap: 'wrap',
                 gap: 8,
+                flexShrink: 0,
               },
             },
             footer,
@@ -191,6 +213,12 @@ export const Tabs = <T extends string>({
     const next = tabs[nextIdx];
     if (next) onChange(next.id);
   };
+  const onWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollWidth > el.clientWidth && e.deltaX === 0 && e.deltaY !== 0) {
+      el.scrollLeft += e.deltaY;
+    }
+  };
   return h(
     'div',
     {
@@ -202,6 +230,8 @@ export const Tabs = <T extends string>({
         padding: '0 12px',
         gap: 8,
         minHeight: 34,
+        minWidth: 0,
+        flexShrink: 0,
         background: tokens.color.surface,
       },
     },
@@ -211,7 +241,16 @@ export const Tabs = <T extends string>({
         role: 'tablist',
         'aria-label': ariaLabel,
         onKeyDown,
-        style: { display: 'flex', alignItems: 'center', gap: 2, overflowX: 'auto' },
+        onWheel,
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          flex: '1 1 auto',
+          minWidth: 0,
+          overflowX: 'auto',
+          overflowY: 'hidden',
+        },
       },
       tabs.map((tab) => {
         const isSelected = tab.id === active;
@@ -241,6 +280,7 @@ export const Tabs = <T extends string>({
               fontFamily: tokens.font.sans,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
             },
           },
           h('span', null, tab.label),
@@ -266,7 +306,11 @@ export const Tabs = <T extends string>({
       }),
     ),
     rightSlot
-      ? h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } }, rightSlot)
+      ? h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 } },
+          rightSlot,
+        )
       : null,
   );
 };
@@ -298,10 +342,16 @@ export const DataTable = <Row>({
   h(
     'div',
     {
+      'data-scroll-region': 'data-table',
       style: {
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        flexShrink: 0,
         border: `1px solid ${tokens.color.border}`,
         borderRadius: tokens.radius.md,
-        overflow: 'auto',
+        overflowX: 'auto',
+        overflowY: 'auto',
         background: tokens.color.surface,
       },
     },
@@ -473,9 +523,34 @@ export const SplitPane = ({
 
   const isHorizontal = direction === 'horizontal';
   const fixedStyle: CSSProperties = isHorizontal
-    ? { width: size, flexShrink: 0, minWidth: 0, minHeight: 0, overflow: 'hidden' }
-    : { height: size, flexShrink: 0, minWidth: 0, minHeight: 0, overflow: 'hidden' };
-  const flexStyle: CSSProperties = { flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' };
+    ? {
+        width: size,
+        maxWidth: 'calc(100% - 140px)',
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      }
+    : {
+        height: size,
+        maxHeight: 'calc(100% - 120px)',
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      };
+  const flexStyle: CSSProperties = {
+    flex: '1 1 0%',
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+  };
 
   if (collapsed) {
     return h(
@@ -484,7 +559,9 @@ export const SplitPane = ({
         style: {
           display: 'flex',
           flexDirection: isHorizontal ? 'row' : 'column',
-          flex: 1,
+          flex: '1 1 0%',
+          width: '100%',
+          height: '100%',
           minWidth: 0,
           minHeight: 0,
           overflow: 'hidden',
@@ -501,7 +578,9 @@ export const SplitPane = ({
       style: {
         display: 'flex',
         flexDirection: isHorizontal ? 'row' : 'column',
-        flex: 1,
+        flex: '1 1 0%',
+        width: '100%',
+        height: '100%',
         minWidth: 0,
         minHeight: 0,
         overflow: 'hidden',

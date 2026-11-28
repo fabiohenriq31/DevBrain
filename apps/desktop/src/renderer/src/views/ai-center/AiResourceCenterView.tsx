@@ -383,7 +383,18 @@ export const AiResourceCenterView = ({
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <div
         style={{
           padding: '10px 16px',
@@ -394,6 +405,7 @@ export const AiResourceCenterView = ({
           justifyContent: 'space-between',
           gap: 10,
           flexWrap: 'wrap',
+          flexShrink: 0,
         }}
       >
         <div>
@@ -416,12 +428,33 @@ export const AiResourceCenterView = ({
       />
 
       <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: activeTab === 'marketplace' || activeTab === 'agents' ? 'hidden' : 'auto',
-          padding: activeTab === 'marketplace' || activeTab === 'agents' ? 0 : 14,
-        }}
+        data-scroll-region={
+          activeTab === 'marketplace' || activeTab === 'agents'
+            ? 'ai-center-split-host'
+            : `ai-center-${activeTab}`
+        }
+        style={
+          activeTab === 'marketplace' || activeTab === 'agents'
+            ? {
+                display: 'flex',
+                flexDirection: 'column',
+                flex: '1 1 0%',
+                minWidth: 0,
+                minHeight: 0,
+                overflow: 'hidden',
+                padding: 0,
+              }
+            : {
+                display: 'flex',
+                flexDirection: 'column',
+                flex: '1 1 0%',
+                minWidth: 0,
+                minHeight: 0,
+                overflowY: 'auto',
+                overflowX: 'auto',
+                padding: 14,
+              }
+        }
       >
         {activeTab === 'overview' ? (
           <OverviewSection

@@ -258,7 +258,7 @@ export const Field = ({
   const descId = error || hint ? `${id}-desc` : undefined;
   return h(
     'div',
-    { style: { display: 'flex', flexDirection: 'column', gap: 5 } },
+    { style: { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 } },
     h(
       'div',
       { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
@@ -458,6 +458,8 @@ export const Banner = ({
         border: '1px solid',
         fontSize: 12.5,
         lineHeight: 1.45,
+        minWidth: 0,
+        flexShrink: 0,
         ...bannerToneStyle[tone],
       },
     },
@@ -505,6 +507,8 @@ export const EmptyState = ({ icon, title, description, actions }: EmptyStateProp
         borderRadius: tokens.radius.lg,
         background: tokens.color.surface,
         gap: 8,
+        minWidth: 0,
+        flexShrink: 0,
       },
     },
     icon
@@ -516,7 +520,9 @@ export const EmptyState = ({ icon, title, description, actions }: EmptyStateProp
       { style: { fontSize: 12, color: tokens.color.textMuted, maxWidth: 420, lineHeight: 1.45 } },
       description,
     ),
-    actions ? h('div', { style: { display: 'flex', gap: 8, marginTop: 6 } }, actions) : null,
+    actions
+      ? h('div', { style: { display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' } }, actions)
+      : null,
   );
 
 export interface UntrustedBlockProps {
@@ -535,6 +541,10 @@ export const UntrustedBlock = ({
     {
       'data-untrusted': 'true',
       style: {
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        flexShrink: 0,
         border: `1px solid ${tokens.color.border}`,
         borderRadius: tokens.radius.md,
         background: tokens.color.background,
@@ -562,11 +572,13 @@ export const UntrustedBlock = ({
     h(
       'pre',
       {
+        'data-scroll-region': 'untrusted-block',
         style: {
           margin: 0,
           padding: '8px 10px',
           maxHeight,
-          overflow: 'auto',
+          overflowX: 'auto',
+          overflowY: 'auto',
           fontFamily: tokens.font.mono,
           fontSize: 11.5,
           lineHeight: 1.45,

@@ -231,13 +231,17 @@ export class ContextOptimizer {
         work.splice(work.indexOf(m), 1);
       }
     }
-    let output: Message[] = work.map(({ role, content, toolCallId }) => ({
+    let output: Message[] = work.map(({ role, content, toolCallId, toolCalls, name, isError }) => ({
       role,
       content:
         wrap && role === 'tool'
           ? `<untrusted-data source="tool">\n${content}\n</untrusted-data>`
           : content,
       ...(toolCallId !== undefined ? { toolCallId } : {}),
+      // Tool-call structure is never optimized away: calls and results must stay correlated.
+      ...(toolCalls !== undefined ? { toolCalls } : {}),
+      ...(name !== undefined ? { name } : {}),
+      ...(isError !== undefined ? { isError } : {}),
     }));
     if (omitted.length) {
       const manifest = manifestText();

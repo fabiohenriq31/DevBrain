@@ -473,6 +473,20 @@ export class AiGateway {
     return run;
   }
 
+  /** Configured routing strategies with their billing and privacy policies. */
+  policies() {
+    return [...this.routing.values()].map((entry) => ({ ...entry }));
+  }
+
+  /**
+   * True when the routing policy can only reach routes with a known zero cost (no paid and no
+   * unknown-cost routes), so requests under it carry no provider charge.
+   */
+  freeOnly(routingPolicyId: string): boolean {
+    const configured = this.routing.get(routingPolicyId);
+    return !!configured && !configured.billing.allowPaid && !configured.billing.allowUnknownCost;
+  }
+
   /** Dry run: the explained decision for a request. Reserves nothing, sends nothing. */
   explain(raw: InferenceRequest): ExplainedRoutingDecision {
     const request = InferenceRequestSchema.parse(raw);
@@ -621,6 +635,18 @@ export class AiGateway {
               if (part.type === 'delta') {
                 exposed = true;
                 yield { type: 'delta', requestId: request.id, seq: seq++, text: part.text };
+              } else if (part.type === 'tool-call-delta') {
+                // A streamed call fragment is output: no silent fallback past this point.
+                exposed = true;
+                yield {
+                  type: 'tool-call-delta',
+                  requestId: request.id,
+                  seq: seq++,
+                  index: part.index,
+                  id: part.id,
+                  name: part.name,
+                  argumentsDelta: part.argumentsDelta,
+                };
               } else generation = part.generation;
             }
           } else {
@@ -690,6 +716,7 @@ export class AiGateway {
             usage,
             attempts: this.attempts(request.id),
             completedAt: new Date().toISOString(),
+            ...(generation.toolCalls?.length ? { toolCalls: generation.toolCalls } : {}),
           });
           // Persist metadata only. Full prompt/output stay in the live response, not SQLite.
           this.db.run(
@@ -697,7 +724,16 @@ export class AiGateway {
             {
               route: candidate.route.id,
               model: candidate.model.id,
-              result: JSON.stringify({ ...result, content: '' }),
+              // Tool arguments are model output (may embed code/data): only names are kept.
+              result: JSON.stringify({
+                ...result,
+                content: '',
+                toolCalls: result.toolCalls?.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  arguments: '',
+                })),
+              }),
               at: result.completedAt,
               id: request.id,
             },

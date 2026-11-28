@@ -25,8 +25,8 @@ const createWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     width: 1400,
     height: 860,
-    minWidth: 1024,
-    minHeight: 640,
+    minWidth: 760,
+    minHeight: 480,
     show: false,
     title: 'DevBrain AI',
     autoHideMenuBar: true,
@@ -80,14 +80,15 @@ void app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   hardenSession();
   started = startCore();
-  engine = started.core ? new OperationalExecutionService(started.core) : null;
+  const core = started.core;
+  const gateway = core ? createGatewayForCore(core) : null;
+  // The native DevBrain agent runs its model calls through this same gateway instance.
+  engine = core ? new OperationalExecutionService(core, undefined, gateway) : null;
   engine?.subscribe((event) => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(ipcEventName('execution.event'), event);
     }
   });
-  const core = started.core;
-  const gateway = core ? createGatewayForCore(core) : null;
   const catalog = core ? new ProviderCatalog(core.db.driver) : null;
   registerIpc({
     core,

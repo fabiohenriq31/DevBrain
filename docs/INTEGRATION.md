@@ -199,3 +199,44 @@ consultada; nada dela foi incorporado.
 
 - `004 phase-02-intelligence` (somente acréscimo): `ai_project_policies`,
   `ai_privacy_profiles`, `ai_routing_decisions`, `ai_cost_records`, `ai_benchmark_runs`.
+
+## Fase 02 — ponte de ferramentas e agente nativo (`phase-02/agent-bridge`)
+
+Contratos **0.8.0** (aditivos). Mudanças fora dos pacotes de Claude, registradas aqui para
+revisão dos donos:
+
+### Para o Codex (gateway e motor de execução)
+
+- `protocols.ts`: chamadas de ferramentas em Chat Completions (incluindo `custom`),
+  Anthropic Messages, Gemini e Ollama; requisição, histórico (`tool_calls`/`tool`,
+  `tool_use`/`tool_result`, `functionCall`/`functionResponse`), resposta e streaming
+  (`tool-call-delta`). O protocolo Responses recusa ferramentas com `UNSUPPORTED`.
+- `gateway.ts`: repassa `toolCalls` no resultado e eventos `tool-call-delta` (marcam saída
+  exposta: sem fallback depois disso). Argumentos de ferramenta não são persistidos no
+  SQLite (só id e nome). Novos `policies()` e `freeOnly(id)`.
+- `server.ts`: o `501` para ferramentas foi substituído por `translateOpenAiChat`;
+  `functions`/`function_call` legados continuam `501`.
+- O roteador exige `capabilities.tools` sempre que a requisição traz ferramentas ou
+  histórico de ferramentas e exclui o protocolo Responses nesse caso.
+- `execution-engine`: helpers de processo movidos para `process.ts` (sem mudança de
+  comportamento); novo `agent-runtime.ts`; `OperationalExecutionService` aceita um terceiro
+  argumento opcional (cliente do gateway) e executa o adapter `devbrain-agent` sem processo
+  externo. Projeto restrito não bloqueia esse adapter no motor: o gateway restringe cada
+  chamada de modelo a rotas locais.
+- `provider-sdk`: novo adapter `devbrain-agent` (`http-api`, enforcement `per-action`).
+
+### Para o Antigravity (UI)
+
+- `WorkspaceView`: quando o agente selecionado usa `devbrain-agent`, mostra estratégia de
+  roteamento (`ai.policies.list`), modelo com ferramentas ou roteamento automático, comandos
+  pré-autorizados e limite de turnos; o bloqueio de projeto restrito não se aplica a esse
+  adapter. Eventos `tool-call` exibem estado e resultado.
+- Para usar: Central de IA → registrar o provedor "DevBrain Agent (AI Gateway)" a partir do
+  catálogo de adapters e criar um agente para ele. Modelos só são elegíveis quando
+  cadastrados com "ferramentas" habilitado.
+
+### OpenCode
+
+Decisão em ADR-0029: o OpenCode continua bloqueado fora de projeto público com custo
+autorizado. A ponte HTTP agora aceita ferramentas, mas as ferramentas do OpenCode rodam
+dentro do próprio OpenCode, fora da autorização do Core.

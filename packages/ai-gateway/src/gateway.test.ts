@@ -623,7 +623,8 @@ describe('authenticated loopback gateway', () => {
         body: JSON.stringify({
           model: 'model-a',
           messages: [{ role: 'user', content: 'edit a file' }],
-          tools: [{ type: 'function', function: { name: 'write_file' } }],
+          // Legacy function calling is not translated: refused, never guessed.
+          functions: [{ name: 'write_file' }],
         }),
       });
       expect(toolsAttempt.status).toBe(501);

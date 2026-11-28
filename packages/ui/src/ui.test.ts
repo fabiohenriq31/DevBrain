@@ -109,4 +109,33 @@ describe('@devbrain/ui primitives and layout', () => {
     expect(html).toContain('role="separator"');
     expect(html).toContain('Permissão negada');
   });
+
+  it('preserves flex height/width containment across nested SplitPanes, Dialogs and DataTables', () => {
+    const html = renderToStaticMarkup(
+      createElement(SplitPane, {
+        direction: 'horizontal',
+        initialSize: 220,
+        minSize: 180,
+        maxSize: 360,
+        first: createElement('nav', null, 'Sidebar'),
+        second: createElement(SplitPane, {
+          direction: 'vertical',
+          initialSize: 260,
+          minSize: 160,
+          maxSize: 480,
+          first: createElement('div', null, 'Top'),
+          second: createElement(DataTable<RowItem>, {
+            columns: [{ key: 'name', header: 'Item', render: (r: RowItem) => r.name }],
+            rows: [{ id: '1', name: 'Row' }],
+            rowKey: (r: RowItem) => r.id,
+          }),
+        }),
+      }),
+    );
+    expect(html).toContain(
+      'display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden',
+    );
+    expect(html).toContain('data-scroll-region="data-table"');
+    expect(html).toContain('flex-shrink:0');
+  });
 });

@@ -148,6 +148,14 @@ export const WorkspaceView = ({
     'terminal' | 'events' | 'files' | 'diff' | 'result' | 'history'
   >('terminal');
   const [submitting, setSubmitting] = useState(false);
+  // DevBrain gateway agent options (only used when the selected agent is `devbrain-agent`).
+  const [gwPolicies, setGwPolicies] = useState<
+    { id: string; allowPaid: boolean; allowUnknownCost: boolean; privacy: string }[]
+  >([]);
+  const [gwPolicyId, setGwPolicyId] = useState('');
+  const [gwModelId, setGwModelId] = useState('');
+  const [gwCommandsText, setGwCommandsText] = useState('test: node --test');
+  const [gwMaxTurns, setGwMaxTurns] = useState('24');
   const [opError, setOpError] = useState<DescribedError | null>(null);
 
   const selectedAgent = useMemo(
@@ -180,11 +188,61 @@ export const WorkspaceView = ({
     return false;
   }, [selectedAgent, selectedProvider]);
 
+  const isGatewayAgent = selectedProvider?.provider.adapterKey === 'devbrain-agent';
+  // The gateway agent is not blocked here: the gateway itself keeps restricted projects on
+  // local routes only (enforced per model call in the main process, not in this view).
   const isRestrictedExternalPromptBlocked =
     projectPrivacy === 'restricted' &&
     mode === 'prompt' &&
     Boolean(selectedAgent) &&
-    !isAgentTargetLocal;
+    !isAgentTargetLocal &&
+    !isGatewayAgent;
+  const gatewayToolModels = useMemo(
+    () => availableModels.filter((m) => m.capabilities.tools && m.lifecycle !== 'deprecated'),
+    [availableModels],
+  );
+  useEffect(() => {
+    if (!isGatewayAgent) return;
+    let cancelled = false;
+    void invoke('ai.policies.list', {})
+      .then((list) => {
+        if (cancelled) return;
+        const mapped = list.map((entry) => ({
+          id: entry.policy.id,
+          allowPaid: entry.billing.allowPaid,
+          allowUnknownCost: entry.billing.allowUnknownCost,
+          privacy: entry.privacy.mode,
+        }));
+        setGwPolicies(mapped);
+        setGwPolicyId((current) =>
+          current && mapped.some((m) => m.id === current)
+            ? current
+            : (mapped.find((m) => !m.allowPaid && !m.allowUnknownCost)?.id ?? mapped[0]?.id ?? ''),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setGwPolicies([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isGatewayAgent]);
+  /** `id: executable arg arg` per line; no shell, no quoting (each token is one argument). */
+  const parseGatewayCommands = (text: string) =>
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = /^([a-z0-9][a-z0-9_-]{0,39})\s*:\s*(\S+)(.*)$/.exec(line);
+        if (!match) throw new Error(line);
+        return {
+          id: match[1]!,
+          executable: match[2]!,
+          args: match[3]!.trim() ? match[3]!.trim().split(/\s+/) : [],
+          timeoutMs: 120_000,
+        };
+      });
 
   const selectableModelOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -525,6 +583,46 @@ export const WorkspaceView = ({
         if (!targetSession) return;
       }
 
+      let gateway = undefined;
+      if (mode === 'prompt' && isGatewayAgent) {
+        if (!gwPolicyId) {
+          setOpError({
+            code: 'VALIDATION_FAILED',
+            title: pt ? 'Escolha uma estratégia de roteamento' : 'Choose a routing strategy',
+            message: pt
+              ? 'O agente DevBrain usa o AI Gateway; configure uma estratégia (ex.: somente gratuito ou somente local) na Central de IA.'
+              : 'The DevBrain agent uses the AI gateway; configure a strategy in the AI Center.',
+            remediation: pt ? 'Abra a Central de IA → Roteamento.' : 'Open AI Center → Routing.',
+            retryable: false,
+          });
+          return;
+        }
+        let allowedCommands;
+        try {
+          allowedCommands = parseGatewayCommands(gwCommandsText);
+        } catch (e) {
+          setOpError({
+            code: 'VALIDATION_FAILED',
+            title: pt ? 'Comando pré-autorizado inválido' : 'Invalid pre-authorized command',
+            message: `${pt ? 'Use o formato' : 'Use the format'} "id: executável arg1 arg2" — ${e instanceof Error ? e.message : ''}`,
+            remediation: pt
+              ? 'Ids em minúsculas (a-z, 0-9, -, _); o executável não pode ser um shell.'
+              : 'Lowercase ids (a-z, 0-9, -, _); the executable cannot be a shell.',
+            retryable: false,
+          });
+          return;
+        }
+        gateway = {
+          routingPolicyId: gwPolicyId,
+          modelId: gwModelId || null,
+          allowedCommands,
+          maxTurns: Math.min(100, Math.max(1, Number.parseInt(gwMaxTurns, 10) || 24)),
+          maxToolCalls: 80,
+          maxTotalTokens: 400_000,
+          maxDurationMs: 20 * 60 * 1000,
+          maxOutputTokensPerTurn: 4096,
+        };
+      }
       const payload =
         mode === 'prompt'
           ? {
@@ -534,6 +632,7 @@ export const WorkspaceView = ({
                 .split(',')
                 .map((s) => s.trim())
                 .filter(Boolean),
+              ...(gateway ? { gateway } : {}),
             }
           : {
               kind: 'command' as const,
@@ -576,7 +675,7 @@ export const WorkspaceView = ({
 
   if (!activeProject) {
     return (
-      <div style={{ padding: 28 }}>
+      <div style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: 28 }}>
         <EmptyState
           icon={<FolderOpen size={28} />}
           title={pt ? 'Nenhum projeto selecionado no Workspace' : 'No active project selected'}
@@ -623,12 +722,17 @@ export const WorkspaceView = ({
   const topComposerPane = (
     <div
       data-testid="workspace-composer-scroll"
+      data-scroll-region="workspace-composer"
       style={{
         display: 'flex',
         flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
         height: '100%',
+        minWidth: 0,
         minHeight: 0,
         overflowY: 'auto',
+        overflowX: 'auto',
         padding: '10px 14px',
         gap: 10,
       }}
@@ -641,6 +745,7 @@ export const WorkspaceView = ({
           justifyContent: 'space-between',
           gap: 10,
           flexWrap: 'wrap',
+          flexShrink: 0,
           paddingBottom: 8,
           borderBottom: `1px solid ${tokens.color.border}`,
         }}
@@ -868,22 +973,67 @@ export const WorkspaceView = ({
                   );
                 })}
               </Select>
-              <Select
-                aria-label={pt ? 'Modelo do agente' : 'Agent model'}
-                value={selectedAgent?.model ?? ''}
-                disabled={!selectedAgent || updatingModel || isRunning}
-                onChange={(e) => void handleChangeAgentModel(e.target.value)}
-                style={{ width: 220, height: 28 }}
-              >
-                <option value="">
-                  {pt ? 'Modelo padrão do runtime' : 'Runtime default model'}
-                </option>
-                {selectableModelOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
+              {isGatewayAgent ? (
+                <>
+                  <Select
+                    aria-label={pt ? 'Estratégia de roteamento' : 'Routing strategy'}
+                    value={gwPolicyId}
+                    disabled={isRunning}
+                    onChange={(e) => setGwPolicyId(e.target.value)}
+                    style={{ width: 220, height: 28 }}
+                  >
+                    {gwPolicies.length === 0 ? (
+                      <option value="">
+                        {pt ? 'Nenhuma estratégia configurada' : 'No strategy configured'}
+                      </option>
+                    ) : null}
+                    {gwPolicies.map((policy) => (
+                      <option key={policy.id} value={policy.id}>
+                        {policy.id} ·{' '}
+                        {!policy.allowPaid && !policy.allowUnknownCost
+                          ? pt
+                            ? 'somente gratuito/local'
+                            : 'free/local only'
+                          : pt
+                            ? 'pode ter custo'
+                            : 'may incur cost'}{' '}
+                        · {policy.privacy}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    aria-label={pt ? 'Modelo do gateway' : 'Gateway model'}
+                    value={gwModelId}
+                    disabled={isRunning}
+                    onChange={(e) => setGwModelId(e.target.value)}
+                    style={{ width: 220, height: 28 }}
+                  >
+                    <option value="">{pt ? 'Roteamento automático' : 'Automatic routing'}</option>
+                    {gatewayToolModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} [{m.providerId}]
+                      </option>
+                    ))}
+                  </Select>
+                </>
+              ) : (
+                <Select
+                  aria-label={pt ? 'Modelo do agente' : 'Agent model'}
+                  value={selectedAgent?.model ?? ''}
+                  disabled={!selectedAgent || updatingModel || isRunning}
+                  onChange={(e) => void handleChangeAgentModel(e.target.value)}
+                  style={{ width: 220, height: 28 }}
+                >
+                  <option value="">
+                    {pt ? 'Modelo padrão do runtime' : 'Runtime default model'}
                   </option>
-                ))}
-              </Select>
+                  {selectableModelOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
               {selectedAgent?.model ? (
                 <Badge tone="info" mono>
                   <Cpu size={10} /> {selectedAgent.model}
@@ -952,6 +1102,42 @@ export const WorkspaceView = ({
               }}
             >
               {enforcement.warnings[0]}
+            </div>
+          ) : null}
+
+          {mode === 'prompt' && isGatewayAgent ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 120px',
+                gap: 8,
+                alignItems: 'start',
+                fontSize: 11.5,
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span className="db-faint">
+                  {pt
+                    ? 'Comandos pré-autorizados (um por linha, "id: executável args"; sem shell). O modelo só pode escolher pelo id; cada execução ainda passa pela política e pode pedir aprovação.'
+                    : 'Pre-authorized commands (one per line, "id: executable args"; no shell). The model can only pick them by id; each run is still policy-checked and may ask for approval.'}
+                </span>
+                <Textarea
+                  value={gwCommandsText}
+                  disabled={isRunning}
+                  onChange={(e) => setGwCommandsText(e.target.value)}
+                  style={{ minHeight: 44, fontFamily: 'monospace', fontSize: 11.5 }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span className="db-faint">{pt ? 'Máx. turnos' : 'Max turns'}</span>
+                <Input
+                  mono
+                  value={gwMaxTurns}
+                  disabled={isRunning}
+                  onChange={(e) => setGwMaxTurns(e.target.value.replace(/[^0-9]/g, ''))}
+                  style={{ height: 28 }}
+                />
+              </div>
             </div>
           ) : null}
 
@@ -1073,7 +1259,18 @@ export const WorkspaceView = ({
   );
 
   const bottomOperationalPane = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 0%',
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <Tabs
         tabs={[
           {
@@ -1110,7 +1307,16 @@ export const WorkspaceView = ({
         onChange={setBottomTab}
       />
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: '1 1 0%',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+      >
         {bottomTab === 'terminal' ? (
           <TerminalPane
             executionId={activeExecutionId}
@@ -1133,7 +1339,17 @@ export const WorkspaceView = ({
         ) : null}
 
         {bottomTab === 'events' ? (
-          <div style={{ height: '100%', overflowY: 'auto', padding: 12 }}>
+          <div
+            data-scroll-region="workspace-events"
+            style={{
+              flex: '1 1 0%',
+              minWidth: 0,
+              minHeight: 0,
+              overflowY: 'auto',
+              overflowX: 'auto',
+              padding: 12,
+            }}
+          >
             <DataTable
               columns={[
                 {
@@ -1149,9 +1365,14 @@ export const WorkspaceView = ({
                   render: (ev) => (
                     <Badge
                       tone={
-                        ev.type === 'error'
+                        ev.type === 'error' ||
+                        (ev.type === 'tool-call' &&
+                          (ev.state === 'denied' ||
+                            ev.state === 'failed' ||
+                            ev.state === 'invalid'))
                           ? 'danger'
-                          : ev.type === 'approval-required'
+                          : ev.type === 'approval-required' ||
+                              (ev.type === 'tool-call' && ev.state === 'unknown')
                             ? 'warning'
                             : ev.type === 'file-change'
                               ? 'success'
@@ -1179,7 +1400,7 @@ export const WorkspaceView = ({
                       case 'message':
                         return `[${ev.role}] ${ev.text.slice(0, 240)}`;
                       case 'tool-call':
-                        return `${ev.tool}: ${JSON.stringify(ev.input).slice(0, 200)}`;
+                        return `${ev.tool}${ev.state ? ` [${ev.state}]` : ''}: ${JSON.stringify(ev.input).slice(0, 200)}${ev.result ? ` → ${ev.result.slice(0, 200)}` : ''}`;
                       case 'approval-required':
                         return `${ev.action} (${ev.approvalId})`;
                       case 'file-change':
@@ -1215,9 +1436,13 @@ export const WorkspaceView = ({
 
         {bottomTab === 'files' ? (
           <div
+            data-scroll-region="workspace-files"
             style={{
-              height: '100%',
+              flex: '1 1 0%',
+              minWidth: 0,
+              minHeight: 0,
               overflowY: 'auto',
+              overflowX: 'auto',
               padding: 12,
               display: 'flex',
               flexDirection: 'column',
@@ -1279,7 +1504,17 @@ export const WorkspaceView = ({
         ) : null}
 
         {bottomTab === 'result' ? (
-          <div style={{ height: '100%', overflowY: 'auto', padding: 14 }}>
+          <div
+            data-scroll-region="workspace-result"
+            style={{
+              flex: '1 1 0%',
+              minWidth: 0,
+              minHeight: 0,
+              overflowY: 'auto',
+              overflowX: 'auto',
+              padding: 14,
+            }}
+          >
             {!executionResult ? (
               <EmptyState
                 title={pt ? 'Sem resultado final disponível' : 'No terminal result yet'}
@@ -1360,9 +1595,13 @@ export const WorkspaceView = ({
 
         {bottomTab === 'history' ? (
           <div
+            data-scroll-region="workspace-history"
             style={{
-              height: '100%',
+              flex: '1 1 0%',
+              minWidth: 0,
+              minHeight: 0,
               overflowY: 'auto',
+              overflowX: 'auto',
               padding: 12,
               display: 'flex',
               flexDirection: 'column',
