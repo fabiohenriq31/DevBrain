@@ -51,6 +51,10 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
 - Descoberta local por `GET /v1/models` para LM Studio e llama.cpp server,
   além da API nativa do Ollama. Identificadores upstream com `/` são aceitos
   pelos contratos 0.7.1. A porta padrão documentada do llama.cpp é 9931.
+  A medição manual de modelos instalados no Ollama usa `POST /api/generate`
+  e os contadores reais `eval_count`/`eval_duration`; TTFT permanece
+  desconhecido porque a medição não transmite tokens em streaming. O resultado
+  local aparece na sessão da interface, sem persistência entre reinícios.
 
 ## Perfis específicos documentados
 
@@ -86,7 +90,7 @@ desconhecidos até verificação explícita por conta e modelo.
 
 ## Validação e aceite
 
-`pnpm validate`: TypeScript, lint, Prettier, 197 testes, varredura de segredos,
+`pnpm validate`: TypeScript, lint, Prettier, 198 testes, varredura de segredos,
 build e smoke Electron aprovados na consolidação. O smoke cobre a regressão
 da Fase 01, armazenamento cifrado, sessões, recuperação, execução e UI.
 
@@ -101,8 +105,8 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.750.419 bytes; SHA-256
-`C35F6A385B72B54EBFD4D624BD2D763C3BE5D590ED80BC3A1256D7E4FED539DC`).
+(120.750.866 bytes; SHA-256
+`B6D8D620C5FF36299FA36C386B2C986E4EAD1FCC4E53ACB611047FB1245E9A29`).
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.

@@ -482,6 +482,11 @@ export const createHandlers = ({
       if (!runtime) throw new DevBrainError('NOT_FOUND', 'Local runtime missing');
       return runtime.models();
     },
+    'ai.local.benchmark': (input) => {
+      if (input.runtimeId !== local().id)
+        throw new DevBrainError('UNSUPPORTED', 'Benchmark is supported only for Ollama');
+      return local().benchmark(input.modelId);
+    },
     'ai.local.pull': (input) => {
       if (input.runtimeId !== local().id)
         throw new DevBrainError('NOT_FOUND', 'Local runtime missing');

@@ -2,10 +2,12 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import {
   DevBrainError,
+  BenchmarkResultSchema,
   HardwareProfileSchema,
   LocalModelSchema,
   LocalRuntimeSchema,
   type HardwareProfile,
+  type BenchmarkResult,
   type LocalModel,
   type LocalRuntime,
 } from '@devbrain/contracts';
@@ -73,6 +75,50 @@ export class OllamaRuntime {
         installedAt:
           typeof model.modified_at === 'string' ? new Date(model.modified_at).toISOString() : null,
       });
+    });
+  }
+
+  /** Measures an installed model with Ollama's own token and duration counters. */
+  async benchmark(modelId: string): Promise<BenchmarkResult> {
+    const installed = await this.models();
+    if (!installed.some((model) => model.modelId === modelId))
+      throw new DevBrainError('NOT_FOUND', 'Ollama model is not installed');
+    const response = await this.transport.json({
+      url: `${this.baseUrl}/api/generate`,
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: modelId,
+        prompt: 'Reply with one short sentence about software testing.',
+        stream: false,
+        options: { num_predict: 32 },
+      }),
+      allowLoopback: true,
+      timeoutMs: 120_000,
+    });
+    const data = obj(response.data);
+    if (response.status !== 200 || data.error || data.done !== true)
+      throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Ollama benchmark failed');
+    const count = data.eval_count;
+    const duration = data.eval_duration;
+    const tokensPerSecond =
+      typeof count === 'number' &&
+      Number.isFinite(count) &&
+      count > 0 &&
+      typeof duration === 'number' &&
+      Number.isFinite(duration) &&
+      duration > 0
+        ? (count * 1_000_000_000) / duration
+        : null;
+    return BenchmarkResultSchema.parse({
+      id: `bench_${randomUUID()}`,
+      runtimeId: this.id,
+      modelId,
+      hardware: inspectHardware(),
+      tokensPerSecond,
+      timeToFirstTokenMs: null,
+      success: true,
+      measuredAt: new Date().toISOString(),
     });
   }
 

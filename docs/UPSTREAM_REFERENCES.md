@@ -7,7 +7,7 @@
 | [OpenAI Chat](https://developers.openai.com/api/reference/resources/chat) e [Responses](https://developers.openai.com/api/reference/resources/responses/methods/create) | Documentação oficial consultada em 2026-11-27; sem código copiado | Formatos de requisição e resposta do transporte TypeScript. |
 | [Anthropic Messages](https://platform.claude.com/docs/en/api/messages) | Documentação oficial consultada em 2026-11-27; sem código copiado | Formato do transporte TypeScript. |
 | [Google Gemini](https://aistudio.google.com/api-reference/generate-content) | Documentação oficial consultada em 2026-11-27; sem código copiado | Formato do transporte TypeScript. |
-| [Ollama](https://docs.ollama.com/api/chat) | Documentação oficial consultada em 2026-11-27; sem código copiado | Transporte, descoberta de modelos, download e remoção locais. |
+| [Ollama](https://docs.ollama.com/api/chat), [Generate](https://docs.ollama.com/api/generate) e [List models](https://docs.ollama.com/api/tags) | Documentação oficial consultada em 2026-11-27; sem código copiado | Transporte, descoberta de modelos, download, remoção e medição local por contadores reais de tokens/duração. |
 
 FreeLLMAPI, Free LLM Proxy Router, LiteLLM e demais projetos citados na missão
 orientaram a análise de arquitetura. Nenhum arquivo de código ou dados desses

@@ -468,6 +468,35 @@ describe('local runtime', () => {
       await upstream.close();
     }
   });
+  it('measures installed Ollama models using provider token counters', async () => {
+    let generated = false;
+    const upstream = await startServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      if (req.url === '/api/tags') {
+        res.end(JSON.stringify({ models: [{ name: 'test:latest', size: 1234 }] }));
+      } else if (req.url === '/api/generate') {
+        generated = true;
+        res.end(JSON.stringify({ done: true, eval_count: 20, eval_duration: 1_000_000_000 }));
+      } else {
+        res.end(JSON.stringify({ version: '0.1.0' }));
+      }
+    });
+    try {
+      const runtime = new OllamaRuntime(upstream.url);
+      const result = await runtime.benchmark('test:latest');
+      expect(generated).toBe(true);
+      expect(result).toMatchObject({
+        runtimeId: runtime.id,
+        modelId: 'test:latest',
+        tokensPerSecond: 20,
+        timeToFirstTokenMs: null,
+        success: true,
+      });
+      await expect(runtime.benchmark('absent')).rejects.toThrow('not installed');
+    } finally {
+      await upstream.close();
+    }
+  });
 });
 
 describe('authenticated loopback gateway', () => {

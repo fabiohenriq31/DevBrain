@@ -951,9 +951,8 @@ export const BenchmarksSection = ({
   language,
 }: BenchmarksSectionProps) => {
   const pt = language === 'pt-BR';
-  const [runtimeId, setRuntimeId] = useState<string>(snapshot.localRuntimes[0]?.id ?? 'ollama');
+  const [runtimeId, setRuntimeId] = useState<string>(snapshot.localRuntimes[0]?.id ?? '');
   const [modelId, setModelId] = useState<string>('');
-  const [authorizePaidOrExternal, setAuthorizePaidOrExternal] = useState(false);
   const [suites, setSuites] = useState<
     { id: string; version: string; cases: number; categories: string[] }[]
   >([]);
@@ -967,6 +966,12 @@ export const BenchmarksSection = ({
     tone: 'info' | 'success' | 'danger';
     text: string;
   } | null>(null);
+  const selectedRuntime = snapshot.localRuntimes.find((runtime) => runtime.id === runtimeId);
+  const canMeasureLocal = selectedRuntime?.kind === 'ollama';
+
+  useEffect(() => {
+    if (!selectedRuntime) setRuntimeId(snapshot.localRuntimes[0]?.id ?? '');
+  }, [selectedRuntime, snapshot.localRuntimes]);
 
   useEffect(() => {
     let active = true;
@@ -1104,22 +1109,18 @@ export const BenchmarksSection = ({
             variant="primary"
             icon={<Play size={13} />}
             loading={busy}
-            disabled={!modelId.trim() || (runtimeId !== 'ollama' && !authorizePaidOrExternal)}
+            disabled={!modelId.trim() || !canMeasureLocal}
             onClick={() => void handleRunBenchmark()}
           >
             {pt ? 'Executar benchmark' : 'Run benchmark'}
           </Button>
         </div>
-        {runtimeId !== 'ollama' ? (
-          <Checkbox
-            checked={authorizePaidOrExternal}
-            onChange={(e) => setAuthorizePaidOrExternal(e.target.checked)}
-            label={
-              pt
-                ? 'Autorizo explicitamente a execução manual deste benchmark em endpoint externo/tarifado.'
-                : 'Explicitly authorize manual benchmark on external/paid endpoint.'
-            }
-          />
+        {selectedRuntime && !canMeasureLocal ? (
+          <div className="db-muted" style={{ fontSize: 12 }}>
+            {pt
+              ? 'Medição de desempenho disponível apenas para modelos instalados no Ollama.'
+              : 'Performance measurement is available only for installed Ollama models.'}
+          </div>
         ) : null}
 
         {/* Dimensions defined for Claude benchmark suite */}
