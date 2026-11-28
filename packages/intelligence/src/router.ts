@@ -129,8 +129,16 @@ export class RoutingPolicyEngine {
         why('protocol', 'model does not accept and produce text');
       if (ctx.request.stream && !c.model.capabilities.streaming)
         why('protocol', 'streaming requested but not supported');
-      if ((ctx.policy.requireTools || task.requiresTools) && !c.model.capabilities.tools)
+      const wantsTools =
+        ctx.policy.requireTools ||
+        task.requiresTools ||
+        !!ctx.request.tools?.length ||
+        ctx.request.messages.some((m) => m.role === 'tool' || !!m.toolCalls?.length);
+      if (wantsTools && !c.model.capabilities.tools)
         why('missing-capability', 'tool calling required');
+      // Declared capability is not enough: the gateway must also transport tools for the protocol.
+      if (wantsTools && c.endpoint.protocol === 'openai-responses')
+        why('protocol', 'tool calling not implemented for the Responses protocol');
       if (task.requiresStructuredOutput && !c.model.capabilities.structuredOutput)
         why('missing-capability', 'structured output required');
       if (task.requiresReasoning && !c.model.capabilities.reasoning)

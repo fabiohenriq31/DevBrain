@@ -279,10 +279,57 @@ export const RoutingDecisionSchema = z.object({
 });
 export type RoutingDecision = z.infer<typeof RoutingDecisionSchema>;
 
+// ---- 0.8.0: tool calling. The gateway TRANSPORTS tool calls and results; it never executes
+// tools. Execution happens in an authorized runtime (Core-enforced), never in the HTTP server.
+/** JSON Schema of tool arguments (an object schema). Validated structurally, size-bounded. */
+export const ToolParametersSchema = z
+  .record(z.string(), z.unknown())
+  .refine((s) => JSON.stringify(s).length <= 64_000, 'Tool schema too large');
+export const ToolDefinitionSchema = z.object({
+  name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+  description: z.string().max(4000),
+  parameters: ToolParametersSchema,
+});
+export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
+/** One structured call proposed by a model. `arguments` is the raw JSON text it produced. */
+export const ToolCallSchema = z.object({
+  id: z.string().min(1).max(200),
+  name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+  arguments: z.string().max(400_000),
+});
+export type ToolCall = z.infer<typeof ToolCallSchema>;
+export const ToolChoiceSchema = z.union([
+  z.enum(['auto', 'none', 'required']),
+  z.object({ name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/) }),
+]);
+export type ToolChoice = z.infer<typeof ToolChoiceSchema>;
+/** Execution state of a tool call inside an agent runtime (never inside the gateway). */
+export const ToolCallStateSchema = z.enum([
+  'proposed',
+  'invalid',
+  'denied',
+  'awaiting-approval',
+  'running',
+  'succeeded',
+  'failed',
+  'unknown',
+]);
+export type ToolCallState = z.infer<typeof ToolCallStateSchema>;
+
 export const InferenceMessageSchema = z.object({
   role: z.enum(['system', 'developer', 'user', 'assistant', 'tool']),
   content: z.string().max(2_000_000),
+  /** Tool result: the call it answers (correlation). */
   toolCallId: z.string().optional(),
+  /** @since 0.8.0 — assistant turn: calls the model proposed (parallel calls allowed). */
+  toolCalls: z.array(ToolCallSchema).max(64).optional(),
+  /** @since 0.8.0 — tool result: tool name (required by some protocols, e.g. Gemini). */
+  name: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]{1,64}$/)
+    .optional(),
+  /** @since 0.8.0 — tool result reports an error. */
+  isError: z.boolean().optional(),
 });
 export const InferenceRequestSchema = z.object({
   id: Id,
@@ -299,6 +346,12 @@ export const InferenceRequestSchema = z.object({
   projectId: ProjectIdSchema.optional(),
   /** @since 0.7.0 — what the request is for; drives eligibility and scoring. */
   task: TaskProfileSchema.optional(),
+  /** @since 0.8.0 — tools the model may call; only tool-capable routes are eligible. */
+  tools: z.array(ToolDefinitionSchema).max(64).optional(),
+  /** @since 0.8.0 */
+  toolChoice: ToolChoiceSchema.optional(),
+  /** @since 0.8.0 — allow several calls in one turn (provider support permitting). */
+  parallelToolCalls: z.boolean().optional(),
 });
 export type InferenceRequest = z.infer<typeof InferenceRequestSchema>;
 export const InferenceErrorSchema = z.object({
@@ -336,6 +389,8 @@ export const InferenceResultSchema = z.object({
   usage: UsageRecordSchema.nullable(),
   attempts: z.array(FallbackAttemptSchema),
   completedAt: TimestampSchema,
+  /** @since 0.8.0 — structured calls proposed by the model (not executed by the gateway). */
+  toolCalls: z.array(ToolCallSchema).max(64).optional(),
 });
 export type InferenceResult = z.infer<typeof InferenceResultSchema>;
 export const InferenceEventSchema = z.discriminatedUnion('type', [
@@ -362,6 +417,16 @@ export const InferenceEventSchema = z.discriminatedUnion('type', [
     requestId: Id,
     seq: z.number().int().nonnegative(),
     error: InferenceErrorSchema,
+  }),
+  /** @since 0.8.0 — streamed tool-call fragment; `index` correlates fragments of one call. */
+  z.object({
+    type: z.literal('tool-call-delta'),
+    requestId: Id,
+    seq: z.number().int().nonnegative(),
+    index: z.number().int().nonnegative().max(63),
+    id: z.string().max(200).nullable(),
+    name: z.string().max(64).nullable(),
+    argumentsDelta: z.string().max(400_000),
   }),
 ]);
 export type InferenceEvent = z.infer<typeof InferenceEventSchema>;

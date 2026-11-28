@@ -1,4 +1,9 @@
-import { DevBrainError, type InferenceRequest, type ProviderEndpoint } from '@devbrain/contracts';
+import {
+  DevBrainError,
+  type InferenceRequest,
+  type ProviderEndpoint,
+  type ToolCall,
+} from '@devbrain/contracts';
 import { SafeHttpTransport } from './transport.js';
 
 type JsonObject = Record<string, unknown>;
@@ -16,9 +21,185 @@ export interface Generation {
   finishReason: 'stop' | 'length' | 'tool-call' | 'content-filter' | 'unknown';
   /** Only non-secret, recognized rate-limit headers; no arbitrary response metadata. */
   quotaHeaders?: Record<string, string>;
+  /** Structured calls proposed by the model. Transported, never executed here. */
+  toolCalls?: ToolCall[];
 }
 export type GenerationPart =
-  { type: 'delta'; text: string } | { type: 'done'; generation: Generation };
+  | { type: 'delta'; text: string }
+  | {
+      type: 'tool-call-delta';
+      index: number;
+      id: string | null;
+      name: string | null;
+      argumentsDelta: string;
+    }
+  | { type: 'done'; generation: Generation };
+
+type Message = InferenceRequest['messages'][number];
+const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
+const MAX_TOOL_CALLS = 64;
+
+/** Parses model-produced argument JSON into an object; never throws (invalid → {}). */
+const argsObject = (raw: string): JsonObject => {
+  try {
+    return object(JSON.parse(raw || '{}'));
+  } catch {
+    return {};
+  }
+};
+
+/** Builds validated calls; malformed entries are dropped, never guessed. */
+const toolCall = (id: unknown, name: unknown, args: unknown, index: number): ToolCall | null => {
+  const callName = text(name);
+  if (!TOOL_NAME.test(callName)) return null;
+  const callId = (text(id) || `call_${index}`).slice(0, 200);
+  const raw = typeof args === 'string' ? args : JSON.stringify(args ?? {});
+  return raw.length > 400_000 ? null : { id: callId, name: callName, arguments: raw };
+};
+const compact = (calls: (ToolCall | null)[]): ToolCall[] =>
+  calls.filter((c): c is ToolCall => c !== null).slice(0, MAX_TOOL_CALLS);
+
+/** Gemini accepts an OpenAPI subset: keep only the portable JSON Schema keywords. */
+const GEMINI_KEYS = new Set([
+  'type',
+  'description',
+  'properties',
+  'required',
+  'items',
+  'enum',
+  'format',
+  'nullable',
+  'minimum',
+  'maximum',
+  'minItems',
+  'maxItems',
+  'anyOf',
+]);
+const geminiSchema = (schema: unknown): unknown => {
+  if (Array.isArray(schema)) return schema.map(geminiSchema);
+  if (!schema || typeof schema !== 'object') return schema;
+  const out: JsonObject = {};
+  for (const [key, value] of Object.entries(schema as JsonObject)) {
+    if (!GEMINI_KEYS.has(key)) continue;
+    if (key === 'properties') {
+      const props: JsonObject = {};
+      for (const [name, sub] of Object.entries(object(value))) props[name] = geminiSchema(sub);
+      out.properties = props;
+    } else out[key] = key === 'items' || key === 'anyOf' ? geminiSchema(value) : value;
+  }
+  return out;
+};
+
+const hasTools = (request: InferenceRequest): boolean =>
+  !!request.tools?.length ||
+  request.messages.some((m) => m.role === 'tool' || !!m.toolCalls?.length);
+
+const openAiMessages = (messages: readonly Message[]) =>
+  messages.map((m) => {
+    if (m.role === 'tool')
+      return { role: 'tool', tool_call_id: m.toolCallId ?? '', content: m.content };
+    if (m.role === 'assistant' && m.toolCalls?.length)
+      return {
+        role: 'assistant',
+        content: m.content || null,
+        tool_calls: m.toolCalls.map((c) => ({
+          id: c.id,
+          type: 'function',
+          function: { name: c.name, arguments: c.arguments },
+        })),
+      };
+    return { role: m.role, content: m.content };
+  });
+
+const anthropicMessages = (messages: readonly Message[]) => {
+  const out: { role: 'user' | 'assistant'; content: unknown }[] = [];
+  for (const m of messages) {
+    if (m.role === 'system' || m.role === 'developer') continue;
+    if (m.role === 'tool') {
+      const block = {
+        type: 'tool_result',
+        tool_use_id: m.toolCallId ?? '',
+        content: m.content,
+        ...(m.isError ? { is_error: true } : {}),
+      };
+      const last = out.at(-1);
+      // Consecutive tool results answer one assistant turn: one user message, many blocks.
+      if (
+        last?.role === 'user' &&
+        Array.isArray(last.content) &&
+        (last.content as JsonObject[])[0]?.type === 'tool_result'
+      )
+        (last.content as unknown[]).push(block);
+      else out.push({ role: 'user', content: [block] });
+      continue;
+    }
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      out.push({
+        role: 'assistant',
+        content: [
+          ...(m.content ? [{ type: 'text', text: m.content }] : []),
+          ...m.toolCalls.map((c) => ({
+            type: 'tool_use',
+            id: c.id,
+            name: c.name,
+            input: argsObject(c.arguments),
+          })),
+        ],
+      });
+      continue;
+    }
+    out.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
+  }
+  return out;
+};
+
+const geminiContents = (messages: readonly Message[]) => {
+  const out: { role: 'user' | 'model'; parts: unknown[] }[] = [];
+  for (const m of messages) {
+    if (m.role === 'system' || m.role === 'developer') continue;
+    if (m.role === 'tool') {
+      const part = {
+        functionResponse: {
+          name: m.name ?? '',
+          response: m.isError ? { error: m.content } : { result: m.content },
+        },
+      };
+      const last = out.at(-1);
+      if (last?.role === 'user' && object(last.parts[0]).functionResponse) last.parts.push(part);
+      else out.push({ role: 'user', parts: [part] });
+      continue;
+    }
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      out.push({
+        role: 'model',
+        parts: [
+          ...(m.content ? [{ text: m.content }] : []),
+          ...m.toolCalls.map((c) => ({
+            functionCall: { name: c.name, args: argsObject(c.arguments) },
+          })),
+        ],
+      });
+      continue;
+    }
+    out.push({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] });
+  }
+  return out;
+};
+
+const ollamaMessages = (messages: readonly Message[]) =>
+  messages.map((m) =>
+    m.role === 'assistant' && m.toolCalls?.length
+      ? {
+          role: 'assistant',
+          content: m.content,
+          tool_calls: m.toolCalls.map((c) => ({
+            function: { name: c.name, arguments: argsObject(c.arguments) },
+          })),
+        }
+      : m.role === 'tool'
+        ? { role: 'tool', content: m.content, ...(m.name ? { tool_name: m.name } : {}) }
+        : { role: m.role === 'developer' ? 'system' : m.role, content: m.content },
+  );
 
 const apiError = (status: number, data: unknown, retryAfter?: string | string[]): DevBrainError => {
   const error = object(object(data).error);
@@ -74,14 +255,22 @@ const normalized = (protocol: ProviderEndpoint['protocol'], data: unknown): Gene
   if (protocol === 'openai-chat' || protocol === 'custom') {
     const choice = object(array(root.choices)[0]);
     const usage = object(root.usage);
-    const content = text(object(choice.message).content);
+    const message = object(choice.message);
+    const content = text(message.content);
     if (!choice.message)
       throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Malformed chat completion');
+    const toolCalls = compact(
+      array(message.tool_calls).map((call, i) => {
+        const fn = object(object(call).function);
+        return toolCall(object(call).id, fn.name, text(fn.arguments), i);
+      }),
+    );
     return {
       content,
       inputTokens: number(usage.prompt_tokens),
       outputTokens: number(usage.completion_tokens),
-      finishReason: finish(choice.finish_reason),
+      finishReason: toolCalls.length ? 'tool-call' : finish(choice.finish_reason),
+      toolCalls,
     };
   }
   if (protocol === 'openai-responses') {
@@ -105,13 +294,18 @@ const normalized = (protocol: ProviderEndpoint['protocol'], data: unknown): Gene
     if (!root.content)
       throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Malformed Messages payload');
     const usage = object(root.usage);
+    const blocks = array(root.content).map(object);
+    const toolCalls = compact(
+      blocks
+        .filter((b) => b.type === 'tool_use')
+        .map((b, i) => toolCall(b.id, b.name, b.input ?? {}, i)),
+    );
     return {
-      content: array(root.content)
-        .map((part) => text(object(part).text))
-        .join(''),
+      content: blocks.map((part) => text(part.text)).join(''),
       inputTokens: number(usage.input_tokens),
       outputTokens: number(usage.output_tokens),
-      finishReason: finish(root.stop_reason),
+      finishReason: toolCalls.length ? 'tool-call' : finish(root.stop_reason),
+      toolCalls,
     };
   }
   if (protocol === 'google-gemini') {
@@ -119,21 +313,36 @@ const normalized = (protocol: ProviderEndpoint['protocol'], data: unknown): Gene
     if (!root.candidates)
       throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Malformed Gemini payload');
     const usage = object(root.usageMetadata);
+    const parts = array(object(candidate.content).parts).map(object);
+    const toolCalls = compact(
+      parts
+        .filter((part) => part.functionCall)
+        .map((part, i) => {
+          const call = object(part.functionCall);
+          return toolCall(call.id, call.name, call.args ?? {}, i);
+        }),
+    );
     return {
-      content: array(object(candidate.content).parts)
-        .map((part) => text(object(part).text))
-        .join(''),
+      content: parts.map((part) => text(part.text)).join(''),
       inputTokens: number(usage.promptTokenCount),
       outputTokens: number(usage.candidatesTokenCount),
-      finishReason: finish(candidate.finishReason),
+      finishReason: toolCalls.length ? 'tool-call' : finish(candidate.finishReason),
+      toolCalls,
     };
   }
   if (!root.message) throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Malformed Ollama payload');
+  const toolCalls = compact(
+    array(object(root.message).tool_calls).map((call, i) => {
+      const fn = object(object(call).function);
+      return toolCall(object(call).id, fn.name, fn.arguments ?? {}, i);
+    }),
+  );
   return {
     content: text(object(root.message).content),
     inputTokens: number(root.prompt_eval_count),
     outputTokens: number(root.eval_count),
-    finishReason: finish(root.done_reason),
+    finishReason: toolCalls.length ? 'tool-call' : finish(root.done_reason),
+    toolCalls,
   };
 };
 
@@ -147,8 +356,14 @@ const build = (
   const base = endpoint.baseUrl.replace(/\/+$/, '');
   const protocol = endpoint.protocol;
   const messages = request.messages;
-  if (messages.some((m) => m.role === 'tool'))
-    throw new DevBrainError('UNSUPPORTED', 'Tool results require an explicit tool-capable adapter');
+  const tools = request.tools ?? [];
+  if (hasTools(request) && protocol === 'openai-responses')
+    throw new DevBrainError(
+      'UNSUPPORTED',
+      'Tool calling is not implemented for the Responses protocol in this gateway',
+    );
+  const choice = request.toolChoice;
+  const parallel = request.parallelToolCalls;
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     accept: stream
@@ -168,8 +383,25 @@ const build = (
     path = '/chat/completions';
     body = {
       model,
-      messages,
+      messages: openAiMessages(messages),
       stream,
+      ...(tools.length
+        ? {
+            tools: tools.map((t) => ({
+              type: 'function',
+              function: { name: t.name, description: t.description, parameters: t.parameters },
+            })),
+            ...(choice
+              ? {
+                  tool_choice:
+                    typeof choice === 'string'
+                      ? choice
+                      : { type: 'function', function: { name: choice.name } },
+                }
+              : {}),
+            ...(parallel !== undefined ? { parallel_tool_calls: parallel } : {}),
+          }
+        : {}),
       ...(request.maxOutputTokens ? { max_tokens: request.maxOutputTokens } : {}),
       ...(request.temperature !== null ? { temperature: request.temperature } : {}),
       ...(stream ? { stream_options: { include_usage: true } } : {}),
@@ -178,7 +410,7 @@ const build = (
     path = '/responses';
     body = {
       model,
-      input: messages,
+      input: messages.map((m) => ({ role: m.role, content: m.content })),
       stream,
       ...(request.maxOutputTokens ? { max_output_tokens: request.maxOutputTokens } : {}),
     };
@@ -188,11 +420,40 @@ const build = (
       .filter((m) => m.role === 'system' || m.role === 'developer')
       .map((m) => m.content)
       .join('\n\n');
+    const anthropicChoice =
+      choice === undefined
+        ? null
+        : choice === 'none'
+          ? { type: 'none' }
+          : choice === 'required'
+            ? { type: 'any' }
+            : choice === 'auto'
+              ? { type: 'auto' }
+              : { type: 'tool', name: choice.name };
     body = {
       model,
       max_tokens: request.maxOutputTokens ?? 1024,
-      messages: messages.filter((m) => m.role === 'user' || m.role === 'assistant'),
+      messages: anthropicMessages(messages),
       stream,
+      ...(tools.length
+        ? {
+            tools: tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters,
+            })),
+            ...(anthropicChoice || parallel === false
+              ? {
+                  tool_choice: {
+                    ...(anthropicChoice ?? { type: 'auto' }),
+                    ...(parallel === false && anthropicChoice?.type !== 'none'
+                      ? { disable_parallel_tool_use: true }
+                      : {}),
+                  },
+                }
+              : {}),
+          }
+        : {}),
       ...(system ? { system } : {}),
       ...(request.temperature !== null ? { temperature: request.temperature } : {}),
     };
@@ -203,12 +464,30 @@ const build = (
       .map((m) => m.content)
       .join('\n\n');
     body = {
-      contents: messages
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }],
-        })),
+      contents: geminiContents(messages),
+      ...(tools.length
+        ? {
+            tools: [
+              {
+                functionDeclarations: tools.map((t) => ({
+                  name: t.name,
+                  description: t.description,
+                  parameters: geminiSchema(t.parameters),
+                })),
+              },
+            ],
+            ...(choice
+              ? {
+                  toolConfig: {
+                    functionCallingConfig:
+                      typeof choice === 'string'
+                        ? { mode: choice === 'required' ? 'ANY' : choice.toUpperCase() }
+                        : { mode: 'ANY', allowedFunctionNames: [choice.name] },
+                  },
+                }
+              : {}),
+          }
+        : {}),
       ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
       generationConfig: {
         ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
@@ -219,8 +498,16 @@ const build = (
     path = '/api/chat';
     body = {
       model,
-      messages,
+      messages: ollamaMessages(messages),
       stream,
+      ...(tools.length
+        ? {
+            tools: tools.map((t) => ({
+              type: 'function',
+              function: { name: t.name, description: t.description, parameters: t.parameters },
+            })),
+          }
+        : {}),
       ...(request.temperature !== null ? { options: { temperature: request.temperature } } : {}),
     };
   }
@@ -334,6 +621,26 @@ export class ProtocolTransport {
       outputTokens: number | null = null;
     let reason: Generation['finishReason'] = 'unknown';
     let total = 0;
+    // Tool calls accumulate by provider index; fragments are also forwarded as deltas.
+    const calls = new Map<number, { id: string; name: string; args: string }>();
+    const pending: GenerationPart[] = [];
+    const fragment = (index: number, id: unknown, name: unknown, args: string) => {
+      if (index < 0 || index >= MAX_TOOL_CALLS) return;
+      const call = calls.get(index) ?? { id: '', name: '', args: '' };
+      if (text(id)) call.id = text(id);
+      if (text(name)) call.name = text(name);
+      call.args += args;
+      if (call.args.length > 400_000)
+        throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Tool call arguments exceed size limit');
+      calls.set(index, call);
+      pending.push({
+        type: 'tool-call-delta',
+        index,
+        id: text(id) || null,
+        name: text(name) || null,
+        argumentsDelta: args,
+      });
+    };
     const consume = (line: string): GenerationPart | null => {
       const payload = line.startsWith('data:') ? line.slice(5).trim() : line.trim();
       if (!payload || payload === '[DONE]' || line.startsWith(':') || line.startsWith('event:'))
@@ -349,6 +656,11 @@ export class ProtocolTransport {
       if (endpoint.protocol === 'openai-chat' || endpoint.protocol === 'custom') {
         const choice = object(array(data.choices)[0]);
         delta = text(object(choice.delta).content);
+        for (const raw of array(object(choice.delta).tool_calls)) {
+          const call = object(raw);
+          const fn = object(call.function);
+          fragment(number(call.index) ?? 0, call.id, fn.name, text(fn.arguments));
+        }
         if (choice.finish_reason) reason = finish(choice.finish_reason);
         inputTokens = number(object(data.usage).prompt_tokens) ?? inputTokens;
         outputTokens = number(object(data.usage).completion_tokens) ?? outputTokens;
@@ -362,20 +674,38 @@ export class ProtocolTransport {
         }
       } else if (endpoint.protocol === 'anthropic-messages') {
         if (data.type === 'content_block_delta') delta = text(object(data.delta).text);
+        if (data.type === 'content_block_start' && object(data.content_block).type === 'tool_use') {
+          const block = object(data.content_block);
+          fragment(number(data.index) ?? 0, block.id, block.name, '');
+        }
+        if (
+          data.type === 'content_block_delta' &&
+          object(data.delta).type === 'input_json_delta' &&
+          calls.has(number(data.index) ?? -1)
+        )
+          fragment(number(data.index) ?? 0, null, null, text(object(data.delta).partial_json));
         if (data.type === 'message_delta') reason = finish(object(data.delta).stop_reason);
         const usage = object(data.usage ?? object(data.message).usage);
         inputTokens = number(usage.input_tokens) ?? inputTokens;
         outputTokens = number(usage.output_tokens) ?? outputTokens;
       } else if (endpoint.protocol === 'google-gemini') {
         const candidate = object(array(data.candidates)[0]);
-        const part = object(array(object(candidate.content).parts)[0]);
-        delta = text(part.text);
+        const parts = array(object(candidate.content).parts).map(object);
+        delta = parts.map((p) => text(p.text)).join('');
+        for (const p of parts.filter((x) => x.functionCall)) {
+          const call = object(p.functionCall);
+          fragment(calls.size, call.id, call.name, JSON.stringify(call.args ?? {}));
+        }
         const usage = object(data.usageMetadata);
         inputTokens = number(usage.promptTokenCount) ?? inputTokens;
         outputTokens = number(usage.candidatesTokenCount) ?? outputTokens;
         if (candidate.finishReason) reason = finish(candidate.finishReason);
       } else {
         delta = text(object(data.message).content);
+        for (const raw of array(object(data.message).tool_calls)) {
+          const fn = object(object(raw).function);
+          fragment(calls.size, object(raw).id, fn.name, JSON.stringify(fn.arguments ?? {}));
+        }
         inputTokens = number(data.prompt_eval_count) ?? inputTokens;
         outputTokens = number(data.eval_count) ?? outputTokens;
         if (data.done) reason = finish(data.done_reason);
@@ -397,14 +727,21 @@ export class ProtocolTransport {
         const line = buffer.slice(0, index).trim();
         buffer = buffer.slice(index + 1);
         const part = consume(line);
+        yield* pending.splice(0);
         if (part) yield part;
       }
     }
     if (buffer.trim()) {
       const part = consume(buffer.trim());
+      yield* pending.splice(0);
       if (part) yield part;
     }
-    if (!content && reason === 'unknown')
+    const toolCalls = compact(
+      [...calls.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([index, call]) => toolCall(call.id, call.name, call.args || '{}', index)),
+    );
+    if (!content && !toolCalls.length && reason === 'unknown')
       throw new DevBrainError('PROVIDER_UNAVAILABLE', 'Provider stream ended without output');
     yield {
       type: 'done',
@@ -412,8 +749,9 @@ export class ProtocolTransport {
         content,
         inputTokens,
         outputTokens,
-        finishReason: reason,
+        finishReason: toolCalls.length ? 'tool-call' : reason,
         quotaHeaders: quotaHeaders(response.headers),
+        toolCalls,
       },
     };
   }

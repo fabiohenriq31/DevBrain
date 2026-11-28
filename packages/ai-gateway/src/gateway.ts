@@ -587,6 +587,18 @@ export class AiGateway {
               if (part.type === 'delta') {
                 exposed = true;
                 yield { type: 'delta', requestId: request.id, seq: seq++, text: part.text };
+              } else if (part.type === 'tool-call-delta') {
+                // A streamed call fragment is output: no silent fallback past this point.
+                exposed = true;
+                yield {
+                  type: 'tool-call-delta',
+                  requestId: request.id,
+                  seq: seq++,
+                  index: part.index,
+                  id: part.id,
+                  name: part.name,
+                  argumentsDelta: part.argumentsDelta,
+                };
               } else generation = part.generation;
             }
           } else {
@@ -656,6 +668,7 @@ export class AiGateway {
             usage,
             attempts: this.attempts(request.id),
             completedAt: new Date().toISOString(),
+            ...(generation.toolCalls?.length ? { toolCalls: generation.toolCalls } : {}),
           });
           // Persist metadata only. Full prompt/output stay in the live response, not SQLite.
           this.db.run(
@@ -663,7 +676,16 @@ export class AiGateway {
             {
               route: candidate.route.id,
               model: candidate.model.id,
-              result: JSON.stringify({ ...result, content: '' }),
+              // Tool arguments are model output (may embed code/data): only names are kept.
+              result: JSON.stringify({
+                ...result,
+                content: '',
+                toolCalls: result.toolCalls?.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  arguments: '',
+                })),
+              }),
               at: result.completedAt,
               id: request.id,
             },

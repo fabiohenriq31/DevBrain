@@ -7,7 +7,7 @@
  * - MINOR: additive change (optional field, new enum value, new channel).
  * - PATCH: documentation or validation-message only.
  */
-export const CONTRACTS_VERSION = '0.7.1' as const;
+export const CONTRACTS_VERSION = '0.8.0' as const;
 
 /** Major version embedded in IPC channel names. */
 export const IPC_PROTOCOL_VERSION = 1 as const;

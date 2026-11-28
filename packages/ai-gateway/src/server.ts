@@ -19,6 +19,102 @@ const readBody = async (request: IncomingMessage): Promise<unknown> => {
   }
 };
 
+type Json = Record<string, unknown>;
+const obj = (v: unknown): Json =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {};
+
+/** OpenAI content may be a string, null, or an array of parts; only text parts are accepted. */
+const contentText = (content: unknown): string => {
+  if (content === null || content === undefined) return '';
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content))
+    throw new DevBrainError('VALIDATION_FAILED', 'Unsupported message content');
+  return content
+    .map((part) => {
+      const item = obj(part);
+      if (item.type !== 'text' || typeof item.text !== 'string')
+        throw new DevBrainError('UNSUPPORTED', 'Only text content parts are supported');
+      return item.text;
+    })
+    .join('');
+};
+
+/**
+ * Translates OpenAI Chat Completions tool fields into the gateway contract. The bridge only
+ * TRANSPORTS calls and results; it never executes a tool. Results are correlated by call id
+ * and the tool name is recovered from the assistant turn that proposed the call.
+ */
+export const translateOpenAiChat = (input: Json) => {
+  if (input.functions !== undefined || input.function_call !== undefined)
+    throw new DevBrainError('UNSUPPORTED', 'Legacy function calling is not supported; use tools');
+  const names = new Map<string, string>();
+  const messages = (input.messages as unknown[]).map((raw) => {
+    const m = obj(raw);
+    if (m.function_call !== undefined)
+      throw new DevBrainError('UNSUPPORTED', 'Legacy function calling is not supported; use tools');
+    const role = m.role;
+    if (role === 'tool') {
+      const id = typeof m.tool_call_id === 'string' ? m.tool_call_id : '';
+      if (!id) throw new DevBrainError('VALIDATION_FAILED', 'Tool message needs tool_call_id');
+      const name = names.get(id);
+      return { role, content: contentText(m.content), toolCallId: id, ...(name ? { name } : {}) };
+    }
+    if (role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+      const toolCalls = m.tool_calls.map((rawCall) => {
+        const call = obj(rawCall);
+        const fn = obj(call.function);
+        if (call.type !== undefined && call.type !== 'function')
+          throw new DevBrainError('UNSUPPORTED', 'Only function tool calls are supported');
+        const id = typeof call.id === 'string' ? call.id : '';
+        const name = typeof fn.name === 'string' ? fn.name : '';
+        names.set(id, name);
+        return { id, name, arguments: typeof fn.arguments === 'string' ? fn.arguments : '{}' };
+      });
+      return { role, content: contentText(m.content), toolCalls };
+    }
+    return { role, content: contentText(m.content) };
+  });
+  const tools = Array.isArray(input.tools)
+    ? input.tools.map((raw) => {
+        const tool = obj(raw);
+        if (tool.type !== 'function')
+          throw new DevBrainError('UNSUPPORTED', 'Only function tools are supported');
+        const fn = obj(tool.function);
+        return {
+          name: fn.name,
+          description: typeof fn.description === 'string' ? fn.description : '',
+          parameters: fn.parameters ?? { type: 'object', properties: {} },
+        };
+      })
+    : [];
+  const choice = input.tool_choice;
+  const toolChoice =
+    choice === undefined
+      ? undefined
+      : typeof choice === 'string'
+        ? choice
+        : { name: obj(obj(choice).function).name };
+  return {
+    messages,
+    ...(tools.length ? { tools } : {}),
+    ...(toolChoice !== undefined ? { toolChoice } : {}),
+    ...(typeof input.parallel_tool_calls === 'boolean'
+      ? { parallelToolCalls: input.parallel_tool_calls }
+      : {}),
+  };
+};
+
+const FINISH: Record<string, string> = {
+  stop: 'stop',
+  length: 'length',
+  'tool-call': 'tool_calls',
+  'content-filter': 'content_filter',
+  unknown: 'stop',
+};
+
+const chunk = (id: string, delta: unknown, finish: string | null): string =>
+  `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+
 const send = (response: ServerResponse, status: number, data: unknown): void => {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -99,24 +195,13 @@ export class LocalGatewayServer {
     const input = body as Record<string, unknown>;
     if (typeof input.model !== 'string' || !Array.isArray(input.messages))
       throw new DevBrainError('VALIDATION_FAILED', 'Model and messages are required');
-    if (
-      (Array.isArray(input.tools) && input.tools.length > 0) ||
-      input.tool_choice !== undefined ||
-      input.messages.some((message) => {
-        if (!message || typeof message !== 'object') return false;
-        const item = message as Record<string, unknown>;
-        return (
-          item.role === 'tool' || item.tool_calls !== undefined || item.function_call !== undefined
-        );
-      })
-    )
-      throw new DevBrainError('UNSUPPORTED', 'Tool calls are not supported by this gateway bridge');
+    const translated = translateOpenAiChat(input);
     const parsed = InferenceRequestSchema.safeParse({
       id: `inf_${randomUUID()}`,
       sessionId: this.context.sessionId ?? null,
       ...(this.context.projectId ? { projectId: this.context.projectId } : {}),
       modelId: input.model,
-      messages: input.messages,
+      ...translated,
       maxOutputTokens: typeof input.max_tokens === 'number' ? input.max_tokens : null,
       temperature: typeof input.temperature === 'number' ? input.temperature : null,
       stream: input.stream === true,
@@ -135,13 +220,28 @@ export class LocalGatewayServer {
       try {
         for await (const event of this.gateway.stream(parsed.data, controller.signal)) {
           if (event.type === 'delta')
+            response.write(chunk(parsed.data.id, { content: event.text }, null));
+          if (event.type === 'tool-call-delta')
             response.write(
-              `data: ${JSON.stringify({ id: parsed.data.id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: event.text }, finish_reason: null }] })}\n\n`,
+              chunk(
+                parsed.data.id,
+                {
+                  tool_calls: [
+                    {
+                      index: event.index,
+                      ...(event.id ? { id: event.id, type: 'function' } : {}),
+                      function: {
+                        ...(event.name ? { name: event.name } : {}),
+                        arguments: event.argumentsDelta,
+                      },
+                    },
+                  ],
+                },
+                null,
+              ),
             );
           if (event.type === 'completed')
-            response.write(
-              `data: ${JSON.stringify({ id: parsed.data.id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: event.result.finishReason }] })}\n\n`,
-            );
+            response.write(chunk(parsed.data.id, {}, FINISH[event.result.finishReason] ?? 'stop'));
         }
         response.end('data: [DONE]\n\n');
       } catch (error) {
@@ -158,8 +258,20 @@ export class LocalGatewayServer {
       choices: [
         {
           index: 0,
-          message: { role: 'assistant', content: result.content },
-          finish_reason: result.finishReason,
+          message: {
+            role: 'assistant',
+            content: result.toolCalls?.length && !result.content ? null : result.content,
+            ...(result.toolCalls?.length
+              ? {
+                  tool_calls: result.toolCalls.map((call) => ({
+                    id: call.id,
+                    type: 'function',
+                    function: { name: call.name, arguments: call.arguments },
+                  })),
+                }
+              : {}),
+          },
+          finish_reason: FINISH[result.finishReason] ?? 'stop',
         },
       ],
       usage:
