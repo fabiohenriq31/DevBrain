@@ -22,6 +22,10 @@
     "@devbrain/core": "workspace:*",
     "@devbrain/git-engine": "workspace:*",
     "@devbrain/provider-sdk": "workspace:*",
-    "@devbrain/security": "workspace:*"
+    "@devbrain/security": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@devbrain/ai-gateway": "workspace:*"
   }
 }

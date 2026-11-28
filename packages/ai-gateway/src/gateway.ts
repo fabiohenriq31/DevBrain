@@ -439,6 +439,15 @@ export class AiGateway {
     return run;
   }
 
+  /**
+   * True when the routing policy can only reach routes with a known zero cost (no paid and no
+   * unknown-cost routes), so requests under it carry no provider charge.
+   */
+  freeOnly(routingPolicyId: string): boolean {
+    const configured = this.routing.get(routingPolicyId);
+    return !!configured && !configured.billing.allowPaid && !configured.billing.allowUnknownCost;
+  }
+
   /** Dry run: the explained decision for a request. Reserves nothing, sends nothing. */
   explain(raw: InferenceRequest): ExplainedRoutingDecision {
     const request = InferenceRequestSchema.parse(raw);

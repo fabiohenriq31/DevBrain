@@ -306,9 +306,70 @@ class CliAdapter implements ProviderAdapter {
   async endSession(): Promise<void> {}
 }
 
+/**
+ * Native DevBrain agent: an in-process tool loop whose model calls go through the DevBrain AI
+ * gateway and whose every file/command action is authorized by Core per action. It has no
+ * external dependency; whether a usable model exists depends on the configured gateway routes.
+ */
+class GatewayAgentAdapter implements ProviderAdapter {
+  readonly key = 'devbrain-agent';
+  readonly descriptor: AdapterDescriptor = {
+    adapterKey: 'devbrain-agent',
+    kind: 'http-api',
+    displayName: 'DevBrain Agent (AI Gateway)',
+    vendor: 'DevBrain',
+    documentationUrl: null,
+    capabilities: {
+      streaming: false,
+      interrupt: true,
+      resumeSession: false,
+      toolUse: true,
+      fileEdits: true,
+      // Only user pre-authorized commands, never a shell.
+      shellCommands: false,
+      mcp: false,
+      structuredOutput: false,
+      maxConcurrentSessions: null,
+      contextWindowTokens: null,
+      // Cost depends on the routes the gateway selects; reported per request when known.
+      costModel: 'unknown',
+      enforcement: 'per-action',
+    },
+  };
+  async checkDependencies(): Promise<DependencyReport> {
+    return {
+      adapterKey: this.key,
+      status: 'available',
+      checks: [
+        {
+          name: 'devbrain-ai-gateway',
+          required: true,
+          found: true,
+          version: null,
+          minimumVersion: null,
+          resolvedPath: null,
+          message: 'Built in; requires a tool-capable model route in the AI gateway',
+        },
+      ],
+      checkedAt: nowTimestamp(),
+    };
+  }
+  async getCapabilities(): Promise<AgentCapabilities> {
+    return this.descriptor.capabilities;
+  }
+  async startSession(input: { sessionId: string }): Promise<AdapterSessionHandle> {
+    return { sessionId: input.sessionId, externalSessionId: null };
+  }
+  execute(): AdapterRun {
+    throw new DevBrainError('UNSUPPORTED', 'Use OperationalExecutionService for gateway agents');
+  }
+  async endSession(): Promise<void> {}
+}
+
 export const createBuiltinRegistry = (): ProviderRegistry => {
   const registry = new ProviderRegistry();
   for (const kind of ['codex', 'claude', 'antigravity', 'opencode'] as const)
     registry.register(new CliAdapter(kind));
+  registry.register(new GatewayAgentAdapter());
   return registry;
 };

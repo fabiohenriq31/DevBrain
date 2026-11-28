@@ -84,12 +84,6 @@ void app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   hardenSession();
   started = startCore();
-  engine = started.core ? new OperationalExecutionService(started.core) : null;
-  engine?.subscribe((event) => {
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send(ipcEventName('execution.event'), event);
-    }
-  });
   const core = started.core;
   const gateway = core
     ? new AiGateway(core.db.driver, async (id, providerId) => {
@@ -99,6 +93,13 @@ void app.whenReady().then(() => {
         return core.credentials.resolve(id, { providerId, reason: 'ai.inference' });
       })
     : null;
+  // The native DevBrain agent runs its model calls through this same gateway instance.
+  engine = core ? new OperationalExecutionService(core, undefined, gateway) : null;
+  engine?.subscribe((event) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(ipcEventName('execution.event'), event);
+    }
+  });
   const catalog = core ? new ProviderCatalog(core.db.driver) : null;
   registerIpc({
     core,
