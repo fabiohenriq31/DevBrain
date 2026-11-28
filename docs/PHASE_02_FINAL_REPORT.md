@@ -38,7 +38,10 @@ PR draft: https://github.com/fabiohenriq31/DevBrain/pull/9.
   ignorá-las e apresentar uma execução de código fictícia.
 - Benchmarks que executariam JavaScript gerado pelo modelo foram desativados:
   o permission model de Node não isola rede. A suíte exposta contém apenas
-  avaliações estáticas/estruturadas.
+  avaliações estáticas/estruturadas. A interface agora consulta as suítes e
+  evidências reais do processo main e permite executar uma suíte em projeto
+  existente, rota selecionada e com confirmação explícita de consumo. O
+  gateway aplica as políticas de privacidade, orçamento e cota do projeto.
 - O fluxo de inferência aplica deduplicação determinística de histórico antes
   do roteamento e do envio ao provedor. Compactação com omissão e referências
   segue desabilitada até existir recuperação durável dos trechos removidos.
@@ -98,8 +101,8 @@ segura com o OpenCode.
 
 Versão 0.2.0, Windows x64 NSIS, sem assinatura digital. Instalador:
 `E:\www\DevBrainAi-phase02-consolidation\release\DevBrain AI Setup 0.2.0.exe`
-(120.749.689 bytes; SHA-256
-`6C14D2B974B5E1215A484FA6DBCFD2070DC319C702D6C17012C36ADD94556A56`).
+(120.750.419 bytes; SHA-256
+`C35F6A385B72B54EBFD4D624BD2D763C3BE5D590ED80BC3A1256D7E4FED539DC`).
 Testes de instalação limpa, atualização sobre 0.1.0, desinstalação e recuperação
 em perfis descartáveis ainda estão pendentes. Dados reais do usuário não foram
 tocados.

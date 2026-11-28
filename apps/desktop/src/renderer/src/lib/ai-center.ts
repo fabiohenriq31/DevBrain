@@ -66,6 +66,9 @@ export const AI_CHANNEL_KEYS = [
   'ai.local.benchmark',
   'ai.checkpoints.latest',
   'ai.handoff.build',
+  'ai.benchmark.suites',
+  'ai.benchmark.run',
+  'ai.benchmark.quality',
 ] as const satisfies readonly IpcChannelKey[];
 
 export type AiChannelKey = (typeof AI_CHANNEL_KEYS)[number];

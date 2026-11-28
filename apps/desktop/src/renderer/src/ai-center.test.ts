@@ -816,12 +816,15 @@ describe('Phase 02 — Multi-provider model grouping, local hardware estimates &
     const benchmarksHtml = renderToStaticMarkup(
       React.createElement(BenchmarksSection, {
         snapshot: makeEmptySnapshot('ready'),
+        activeProjectId: null,
+        routingPolicyId: 'policy-balanced',
         onRecordBenchmark: () => undefined,
         language: 'pt-BR',
       }),
     );
     expect(benchmarksHtml).toContain('Executar benchmark');
     expect(benchmarksHtml).toContain('zero notas fictícias');
+    expect(benchmarksHtml).toContain('Suítes de avaliação estruturada');
 
     const diagnosticsHtml = renderToStaticMarkup(
       React.createElement(DiagnosticsSection, {

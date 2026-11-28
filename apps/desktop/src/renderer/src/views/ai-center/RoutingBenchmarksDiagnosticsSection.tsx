@@ -3,10 +3,12 @@ import type {
   AgentSession,
   ApplicationSettings,
   BenchmarkResult,
+  BenchmarkRun,
   CostRecord,
   ExplainedRoutingDecision,
   FallbackAttempt,
   HandoffPacket,
+  ModelEvidence,
   ProviderPrivacyProfile,
   RoutingDecision,
   TaskCheckpoint,
@@ -935,12 +937,16 @@ export const RoutingStrategiesSection = ({
 
 export interface BenchmarksSectionProps {
   snapshot: AiResourceSnapshot;
+  activeProjectId: string | null;
+  routingPolicyId: string;
   onRecordBenchmark: (result: BenchmarkResult) => void;
   language: AppLanguage;
 }
 
 export const BenchmarksSection = ({
   snapshot,
+  activeProjectId,
+  routingPolicyId,
   onRecordBenchmark,
   language,
 }: BenchmarksSectionProps) => {
@@ -948,11 +954,66 @@ export const BenchmarksSection = ({
   const [runtimeId, setRuntimeId] = useState<string>(snapshot.localRuntimes[0]?.id ?? 'ollama');
   const [modelId, setModelId] = useState<string>('');
   const [authorizePaidOrExternal, setAuthorizePaidOrExternal] = useState(false);
+  const [suites, setSuites] = useState<
+    { id: string; version: string; cases: number; categories: string[] }[]
+  >([]);
+  const [quality, setQuality] = useState<ModelEvidence[]>([]);
+  const [suiteId, setSuiteId] = useState('');
+  const [suiteRouteId, setSuiteRouteId] = useState('');
+  const [confirmSuite, setConfirmSuite] = useState(false);
+  const [latestSuiteRun, setLatestSuiteRun] = useState<BenchmarkRun | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{
     tone: 'info' | 'success' | 'danger';
     text: string;
   } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      callAiChannel('ai.benchmark.suites', {}),
+      callAiChannel('ai.benchmark.quality', {}),
+    ]).then(([suiteOut, qualityOut]) => {
+      if (!active) return;
+      if (suiteOut.status === 'ok') setSuites(suiteOut.data);
+      if (qualityOut.status === 'ok') setQuality(qualityOut.data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleRunSuite = async () => {
+    if (!activeProjectId || !suiteId || !suiteRouteId || !confirmSuite) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const out = await callAiChannel('ai.benchmark.run', {
+        suiteId,
+        routeId: suiteRouteId,
+        routingPolicyId,
+        projectId: activeProjectId,
+        confirm: true,
+      });
+      if (out.status === 'ok') {
+        setLatestSuiteRun(out.data);
+        setConfirmSuite(false);
+        setFeedback({
+          tone: 'success',
+          text: pt
+            ? `Suíte concluída: ${out.data.results.filter((result) => result.passed).length}/${out.data.results.length} casos aprovados.`
+            : 'Benchmark suite completed.',
+        });
+      } else {
+        setFeedback({
+          tone: 'danger',
+          text: out.status === 'unsupported' ? out.message : out.error.message,
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleRunBenchmark = async () => {
     if (!runtimeId.trim() || !modelId.trim()) return;
@@ -977,7 +1038,7 @@ export const BenchmarksSection = ({
           text:
             res.status === 'unsupported'
               ? pt
-                ? 'Canal ai.local.benchmark respondeu UNSUPPORTED — a suíte de avaliação do laboratório pertence ao bloco Claude e será habilitada na consolidação da Fase 02 (nenhuma nota fictícia é exibida).'
+                ? 'Medição local indisponível neste runtime. As suítes estruturadas abaixo usam a rota configurada no gateway.'
                 : res.message
               : res.error.message,
         });
@@ -1077,6 +1138,99 @@ export const BenchmarksSection = ({
             </Badge>
           ))}
         </div>
+      </div>
+
+      <div className="db-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <h3 className="db-section-title">
+          {pt ? 'Suítes de avaliação estruturada' : 'Structured evaluation suites'}
+        </h3>
+        <div style={{ fontSize: 12 }} className="db-muted">
+          {pt
+            ? 'Cada caso faz inferência real pela rota e pode consumir cota ou gerar custo. A política do projeto é aplicada no gateway.'
+            : 'Each case calls the selected route and may consume quota or incur cost. Project policy applies.'}
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+            gap: 8,
+          }}
+        >
+          <Field label={pt ? 'Suíte' : 'Suite'}>
+            {(props) => (
+              <Select {...props} value={suiteId} onChange={(e) => setSuiteId(e.target.value)}>
+                <option value="">{pt ? 'Selecione' : 'Select'}</option>
+                {suites.map((suite) => (
+                  <option key={suite.id} value={suite.id}>
+                    {suite.id}@{suite.version} ({suite.cases} {pt ? 'casos' : 'cases'})
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label={pt ? 'Rota' : 'Route'}>
+            {(props) => (
+              <Select
+                {...props}
+                value={suiteRouteId}
+                onChange={(e) => setSuiteRouteId(e.target.value)}
+              >
+                <option value="">{pt ? 'Selecione' : 'Select'}</option>
+                {snapshot.routes
+                  .filter((route) => route.enabled)
+                  .map((route) => (
+                    <option key={route.id} value={route.id}>
+                      {route.id}
+                    </option>
+                  ))}
+              </Select>
+            )}
+          </Field>
+        </div>
+        <Checkbox
+          checked={confirmSuite}
+          onChange={(e) => setConfirmSuite(e.target.checked)}
+          label={
+            pt
+              ? 'Autorizo esta execução e o consumo da rota selecionada.'
+              : 'I authorize this run and its route usage.'
+          }
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={busy}
+          disabled={!activeProjectId || !suiteId || !suiteRouteId || !confirmSuite}
+          onClick={() => void handleRunSuite()}
+        >
+          {pt ? 'Executar suíte' : 'Run suite'}
+        </Button>
+        {latestSuiteRun ? (
+          <div className="db-mono" style={{ fontSize: 11 }}>
+            {latestSuiteRun.suiteId}@{latestSuiteRun.suiteVersion}:{' '}
+            {latestSuiteRun.results.filter((result) => result.passed).length}/
+            {latestSuiteRun.results.length} {pt ? 'casos aprovados' : 'cases passed'}
+          </div>
+        ) : null}
+        <DataTable
+          columns={[
+            { key: 'model', header: pt ? 'Modelo' : 'Model', render: (entry) => entry.modelId },
+            {
+              key: 'samples',
+              header: pt ? 'Amostras' : 'Samples',
+              render: (entry) => entry.samples,
+            },
+            {
+              key: 'confidence',
+              header: pt ? 'Confiança' : 'Confidence',
+              render: (entry) => entry.confidence,
+            },
+            { key: 'source', header: pt ? 'Origem' : 'Source', render: (entry) => entry.source },
+          ]}
+          rows={quality}
+          rowKey={(entry) => entry.modelId}
+          emptyMessage={pt ? 'Sem medições de qualidade.' : 'No quality measurements.'}
+        />
       </div>
 
       <DataTable

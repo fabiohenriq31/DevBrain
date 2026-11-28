@@ -568,6 +568,8 @@ export const AiResourceCenterView = ({
         {activeTab === 'benchmarks' ? (
           <BenchmarksSection
             snapshot={snapshot}
+            activeProjectId={activeProject?.id ?? null}
+            routingPolicyId={strategyDraft.policyId}
             onRecordBenchmark={(res: BenchmarkResult) =>
               setSnapshot((prev) => ({
                 ...prev,

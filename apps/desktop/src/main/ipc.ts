@@ -435,6 +435,11 @@ export const createHandlers = ({
         categories: [...new Set(suite.cases.map((x) => x.category))],
       })),
     'ai.benchmark.run': async (input) => {
+      if (!input.projectId || !c().db.projects.findById(input.projectId))
+        throw new DevBrainError(
+          'PERMISSION_DENIED',
+          'Benchmark requires an existing project policy',
+        );
       const run = await g().runBenchmark(input);
       c().db.audit.appendSync({
         actor: { type: 'user' },
